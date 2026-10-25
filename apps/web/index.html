@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ClinVar GKM browser</title>
+    <script>
+      // Applies a stored theme choice before first paint, so there is no flash of the wrong
+      // theme. src/lib/theme.ts owns the preference after load and uses the same key.
+      try {
+        var theme = localStorage.getItem('cvb-theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

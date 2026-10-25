@@ -20,6 +20,8 @@ const Env = z.object({
   DUCKDB_MEMORY_LIMIT: z.string().optional(),
   DUCKDB_THREADS: z.coerce.number().int().min(1).optional(),
   QUERY_TIMEOUT_MS: z.coerce.number().int().min(100).default(30_000),
+  // The built web app (apps/web/dist). Unset in development, where Vite serves it.
+  WEB_DIST_DIR: z.string().min(1).optional(),
   LOG_FILE: onOff.default(true),
   LOG_ROTATE_SIZE: z.string().default('50M'),
   LOG_ROTATE_INTERVAL: z.string().default('1d'),
@@ -35,6 +37,7 @@ export interface Config {
   dataDir: string;
   allowedHosts: string[];
   pinnedRelease: string | null;
+  webDistDir: string | null;
   duckdb: { memoryLimit: string; threads: number; queryTimeoutMs: number };
   logFile: { size: string; interval: string; maxFiles: number } | null;
 }
@@ -56,6 +59,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       .map((host) => host.trim().toLowerCase())
       .filter((host) => host !== ''),
     pinnedRelease: e.CLINVAR_RELEASE ?? null,
+    webDistDir: e.WEB_DIST_DIR ?? null,
     duckdb: {
       // Half the machine (or container) by default, leaving room for Node and the OS.
       memoryLimit: e.DUCKDB_MEMORY_LIMIT ?? `${Math.max(1, Math.floor(totalmem() / 2 ** 31))}GB`,

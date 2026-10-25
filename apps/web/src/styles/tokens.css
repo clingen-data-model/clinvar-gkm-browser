@@ -1,0 +1,58 @@
+/*
+ * Color tokens. Semantic colors have a light and a dark value through light-dark(), which
+ * follows color-scheme: the OS preference, or data-theme on <html> when the user overrides it.
+ * Values are Tailwind palette colors written out, so the tokens don't depend on which palette
+ * variables Tailwind emits. Every text/background pair meets WCAG AA (4.5:1).
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --background: light-dark(oklch(100% 0 0), oklch(16% 0.01 260));
+  --foreground: light-dark(oklch(21% 0.034 264.665), oklch(96.7% 0.003 264.542));
+  --muted: light-dark(oklch(96.7% 0.003 264.542), oklch(22% 0.015 260));
+  --muted-foreground: light-dark(oklch(44.6% 0.03 256.802), oklch(70.7% 0.022 261.325));
+  --border: light-dark(oklch(92.8% 0.006 264.531), oklch(30% 0.02 260));
+  --ring: light-dark(oklch(48.8% 0.243 264.376), oklch(80.9% 0.105 251.813));
+  --link: light-dark(oklch(48.8% 0.243 264.376), oklch(80.9% 0.105 251.813));
+  --accent: light-dark(oklch(42.4% 0.199 265.638), oklch(80.9% 0.105 251.813));
+  --accent-muted: light-dark(oklch(93.2% 0.032 255.585), oklch(28.2% 0.091 267.935));
+
+  /* Notices: a caution (amber) and a problem (red). */
+  --notice-warning: light-dark(oklch(96.2% 0.059 95.617), oklch(27.9% 0.077 45.635));
+  --notice-warning-border: light-dark(oklch(47.3% 0.137 46.201), oklch(76.9% 0.188 70.08));
+  --notice-danger: light-dark(oklch(93.6% 0.032 17.717), oklch(25.8% 0.092 26.042));
+  --notice-danger-border: light-dark(oklch(44.4% 0.177 26.899), oklch(70.4% 0.191 22.216));
+
+  /* The frame: the band under the header, and the footer. */
+  --band: light-dark(oklch(42.4% 0.11 258), oklch(30% 0.07 260));
+  --band-foreground: light-dark(oklch(100% 0 0), oklch(96.7% 0.003 264.542));
+  --band-muted-foreground: light-dark(oklch(93.2% 0.032 255.585), oklch(80.9% 0.105 251.813));
+  /* The band's lower part on entity pages, under the title: facts and tabs. */
+  --band-secondary: light-dark(oklch(47% 0.13 255), oklch(35% 0.08 258));
+  /* The current tab's marker. */
+  --tab-indicator: oklch(75% 0.183 55.934);
+  --footer: light-dark(oklch(92.9% 0.013 255.5), oklch(20% 0.015 260));
+
+  /*
+   * Significance buckets (docs/data.md#conflicts): pathogenic red, uncertain amber, benign green,
+   * other types slate, not provided grey. A pill is the color with white text in light mode;
+   * dark mode uses lighter tints with dark text. Each pair is at least 4.5:1.
+   */
+  --bucket-p: light-dark(oklch(50.5% 0.213 27.518), oklch(80.8% 0.114 19.571));
+  --bucket-v: light-dark(oklch(47.3% 0.137 46.201), oklch(87.9% 0.169 91.605));
+  --bucket-b: light-dark(oklch(44.8% 0.119 151.328), oklch(84.5% 0.143 164.978));
+  --bucket-o: light-dark(oklch(44.6% 0.043 257.281), oklch(86.9% 0.022 252.894));
+  --bucket-n: light-dark(oklch(55.1% 0.027 264.364), oklch(70.7% 0.022 261.325));
+  --bucket-foreground: light-dark(oklch(100% 0 0), oklch(21% 0.034 264.665));
+  /* Stars: amber, decorative beside the review status text. */
+  --star: light-dark(oklch(66.6% 0.179 58.318), oklch(82.8% 0.189 84.429));
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}

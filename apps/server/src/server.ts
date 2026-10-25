@@ -15,15 +15,19 @@ import { healthRoutes } from './http/health/routes.ts';
 import { registerLocalAccess } from './http/local-access.ts';
 import { registerOpenApi, registerOpenApiUi } from './http/openapi.ts';
 import { registerSecurityHeaders } from './http/security-headers.ts';
+import { isPagePath, pageRoutes, sendPage } from './pages/routes.ts';
+import type { WebApp } from './pages/web-app.ts';
 
 export interface ServerDeps {
   db: Database;
   logger: FastifyBaseLogger;
   /** Host header values to answer (docs/local-app.md#security). */
   allowedHosts: string[];
+  /** The built web app to serve, or null when Vite serves it (development). */
+  web?: WebApp | null;
 }
 
-export async function buildServer({ db, logger, allowedHosts }: ServerDeps) {
+export async function buildServer({ db, logger, allowedHosts, web = null }: ServerDeps) {
   const app = Fastify({
     loggerInstance: logger,
     genReqId: () => randomUUID(),
@@ -35,13 +39,20 @@ export async function buildServer({ db, logger, allowedHosts }: ServerDeps) {
   app.setSerializerCompiler(serializerCompiler);
   registerLocalAccess(app, allowedHosts);
   registerSecurityHeaders(app);
-  registerErrorHandling(app);
+  // An unknown page path gets the web app with a 404 status; anything else, a problem.
+  registerErrorHandling(
+    app,
+    web === null
+      ? undefined
+      : (request, reply) => (isPagePath(request.url) ? sendPage(reply, web, false) : undefined),
+  );
 
   // OpenAPI collects routes as they are registered, so it comes before them.
   await registerOpenApi(app);
   await app.register(healthRoutes, { db });
   await app.register(api, { prefix: '/api/v1', db });
   await registerOpenApiUi(app);
+  if (web !== null) await app.register(pageRoutes, { web });
 
   return app;
 }

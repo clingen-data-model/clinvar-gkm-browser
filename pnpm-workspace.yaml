@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - packages/*
+  - e2e
 
 # Dependency hygiene, as in gencc (docs/stack.md).
 # Exact versions only; ranges are never written to package.json.

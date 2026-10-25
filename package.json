@@ -7,12 +7,15 @@
     "node": ">=26.10.0 <27"
   },
   "scripts": {
-    "dev": "pnpm --filter @cvb/server dev",
+    "dev": "pnpm --filter @cvb/server --filter @cvb/web --parallel dev",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r typecheck",
     "lint": "eslint --flag unstable_native_nodejs_ts_config .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "build": "pnpm --filter @cvb/web build",
+    "preview": "pnpm build && pnpm --filter @cvb/server preview",
+    "e2e": "pnpm --filter @cvb/e2e test"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -21,6 +24,7 @@
     "prettier": "3.9.10",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
-    "vitest": "5.0.4"
+    "vitest": "5.0.4",
+    "eslint-plugin-react-hooks": "7.1.1"
   }
 }

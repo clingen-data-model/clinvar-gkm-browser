@@ -3,3 +3,4 @@ pnpm-lock.yaml
 *.sql
 data/
 docs/research/
+apps/web/src/routeTree.gen.ts

@@ -1,0 +1,54 @@
+@import 'tailwindcss';
+@import './tokens.css';
+@import './typography.css';
+
+/* The semantic tokens as Tailwind colors: bg-background, text-muted-foreground, border-border... */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-link: var(--link);
+  --color-accent: var(--accent);
+  --color-accent-muted: var(--accent-muted);
+  --color-notice-warning: var(--notice-warning);
+  --color-notice-warning-border: var(--notice-warning-border);
+  --color-notice-danger: var(--notice-danger);
+  --color-notice-danger-border: var(--notice-danger-border);
+  --color-band: var(--band);
+  --color-band-foreground: var(--band-foreground);
+  --color-band-muted-foreground: var(--band-muted-foreground);
+  --color-band-secondary: var(--band-secondary);
+  --color-tab-indicator: var(--tab-indicator);
+  --color-footer: var(--footer);
+  --color-bucket-p: var(--bucket-p);
+  --color-bucket-v: var(--bucket-v);
+  --color-bucket-b: var(--bucket-b);
+  --color-bucket-o: var(--bucket-o);
+  --color-bucket-n: var(--bucket-n);
+  --color-bucket-foreground: var(--bucket-foreground);
+  --color-star: var(--star);
+}
+
+@theme {
+  /* The page title in the band: large and light. */
+  --text-band-title: clamp(2rem, 1.5rem + 2vw, 3rem);
+  --text-band-title--line-height: 1.15;
+}
+
+/*
+ * dark: matches the dark theme, whether chosen explicitly (data-theme) or by the OS with no
+ * override. Colors come from tokens, so this is for the rare non-color case.
+ */
+@custom-variant dark {
+  &:where([data-theme='dark'], [data-theme='dark'] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme='light']), :root:not([data-theme='light']) *) {
+      @slot;
+    }
+  }
+}

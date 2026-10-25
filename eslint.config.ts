@@ -1,4 +1,5 @@
 import js from '@eslint/js';
+import reactHooks from 'eslint-plugin-react-hooks';
 import { defineConfig } from 'eslint/config';
 import tseslint from 'typescript-eslint';
 
@@ -43,6 +44,12 @@ const boundaries = defineConfig(
       '@typescript-eslint/no-restricted-imports': restrict(nodeBuiltins, http, databaseInBrowser),
     },
   },
+  {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': restrict(nodeBuiltins, http, databaseInBrowser),
+    },
+  },
   // Server layers.
   {
     files: ['apps/server/src/**/*.ts'],
@@ -57,14 +64,27 @@ const boundaries = defineConfig(
     rules: { '@typescript-eslint/no-restricted-imports': restrict(http) },
   },
   {
-    files: ['apps/server/src/{main,server}.ts', 'apps/server/test/**/*.ts', '**/*.test.ts'],
+    files: [
+      'apps/server/src/{main,server}.ts',
+      'apps/server/test/**/*.ts',
+      '**/*.test.ts',
+      'e2e/**/*.ts',
+    ],
     rules: { '@typescript-eslint/no-restricted-imports': 'off' },
   },
 );
 
 export default defineConfig(
   {
-    ignores: ['**/node_modules/', '**/dist/', '**/coverage/', 'data/', 'docs/'],
+    ignores: [
+      '**/node_modules/',
+      '**/dist/',
+      '**/coverage/',
+      'data/',
+      'docs/',
+      // Generated.
+      'apps/web/src/routeTree.gen.ts',
+    ],
   },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,
@@ -86,8 +106,32 @@ export default defineConfig(
         'error',
         { ignoreRestSiblings: true, destructuredArrayIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      // TanStack Router redirects and signals not-found by throwing these from loaders.
+      '@typescript-eslint/only-throw-error': [
+        'error',
+        {
+          allow: [
+            {
+              from: 'package',
+              package: '@tanstack/router-core',
+              name: ['Redirect', 'NotFoundError'],
+            },
+          ],
+        },
+      ],
       // Fastify plugins are idiomatically `async (app) => { app.get(...) }` with no await.
       '@typescript-eslint/require-await': 'off',
+    },
+  },
+  {
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat['recommended-latest']],
+  },
+  {
+    // Vite's config runs in Node, so it has its own tsconfig apart from the browser code.
+    files: ['apps/web/vite.config.ts'],
+    languageOptions: {
+      parserOptions: { projectService: false, project: 'apps/web/tsconfig.node.json' },
     },
   },
   boundaries,

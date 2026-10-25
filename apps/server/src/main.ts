@@ -5,6 +5,7 @@ import { ConfigError, loadConfig } from './config.ts';
 import { Database } from './data/database.ts';
 import { findReleases } from './data/releases.ts';
 import { createLogger } from './logging.ts';
+import { loadWebApp } from './pages/web-app.ts';
 import { buildServer } from './server.ts';
 
 let config;
@@ -32,7 +33,8 @@ if (current === null) {
   logger.info({ current, releases: releases.length, duckdb: config.duckdb }, 'releases loaded');
 }
 
-const app = await buildServer({ db, logger, allowedHosts: config.allowedHosts });
+const web = config.webDistDir === null ? null : loadWebApp(config.webDistDir);
+const app = await buildServer({ db, logger, allowedHosts: config.allowedHosts, web });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
