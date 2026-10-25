@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+test-results/
+playwright-report/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+
+# Local data: parquet copies, DuckDB files, benchmark outputs
+data/
+*.duckdb
+*.duckdb.wal
+docs/research/clinvar-gkm-bench/logs/

@@ -1,0 +1,24 @@
+LOAD httpfs;
+.mode list
+SELECT '## sequenceReference'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/sequenceReference.parquet');
+SELECT '## location'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/location.parquet');
+SELECT '## allele'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/allele.parquet');
+SELECT '## copyNumberCount'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/copyNumberCount.parquet');
+SELECT '## copyNumberChange'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/copyNumberChange.parquet');
+SELECT '## gene'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/gene.parquet');
+SELECT '## variation'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/variation.parquet');
+SELECT '## condition'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/condition.parquet');
+SELECT '## conditionSet'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/conditionSet.parquet');
+SELECT '## therapy'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/therapy.parquet');
+SELECT '## therapyGroup'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/therapyGroup.parquet');
+SELECT '## submitter'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/submitter.parquet');
+SELECT '## propositionPathogenicity'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/propositionPathogenicity.parquet');
+SELECT '## propositionOncogenicity'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/propositionOncogenicity.parquet');
+SELECT '## propositionSomaticClinicalImpact'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/propositionSomaticClinicalImpact.parquet');
+SELECT '## propositionClinvarCustom'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/propositionClinvarCustom.parquet');
+SELECT '## evidenceLine'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/evidenceLine.parquet');
+SELECT '## vcv_evidenceLine'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/vcv_evidenceLine.parquet');
+SELECT '## rcv_evidenceLine'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/rcv_evidenceLine.parquet');
+SELECT '## scv'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/scv.parquet');
+SELECT '## vcv'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/vcv.parquet');
+SELECT '## rcv'; SELECT column_name || ' : ' || column_type FROM (DESCRIBE SELECT * FROM 'https://data.clinvar-gkm.org/v1/1.1/parquet/rcv.parquet');

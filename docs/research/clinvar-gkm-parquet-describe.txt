@@ -1,0 +1,208 @@
+## sequenceReference
+id : VARCHAR
+type : VARCHAR
+refget_accession : VARCHAR
+name : VARCHAR
+molecule_type : VARCHAR
+residue_alphabet : VARCHAR
+data : VARCHAR
+## location
+id : VARCHAR
+type : VARCHAR
+digest : VARCHAR
+loc_start : BIGINT
+loc_end : BIGINT
+sequence_reference_id : VARCHAR
+data : VARCHAR
+loc_start_min : BIGINT
+loc_start_max : BIGINT
+loc_end_min : BIGINT
+loc_end_max : BIGINT
+## allele
+id : VARCHAR
+type : VARCHAR
+digest : VARCHAR
+name : VARCHAR
+location_id : VARCHAR
+data : VARCHAR
+## copyNumberCount
+id : VARCHAR
+type : VARCHAR
+digest : VARCHAR
+copies : BIGINT
+location_id : VARCHAR
+data : VARCHAR
+## copyNumberChange
+id : VARCHAR
+type : VARCHAR
+digest : VARCHAR
+copy_change : VARCHAR
+location_id : VARCHAR
+data : VARCHAR
+## gene
+id : VARCHAR
+concept_type : VARCHAR
+name : VARCHAR
+data : VARCHAR
+## variation
+id : VARCHAR
+type : VARCHAR
+name : VARCHAR
+extensions : STRUCT("name" VARCHAR, value_string VARCHAR, value_boolean BOOLEAN, value_coding BIGINT, value_hgvs_array STRUCT(nucleotideExpression STRUCT(syntax VARCHAR, "value" VARCHAR, "extensions" STRUCT("name" VARCHAR, value_string VARCHAR, value_boolean BOOLEAN)[]), nucleotideType VARCHAR, maneSelect BOOLEAN, manePlus BOOLEAN, proteinExpression STRUCT(syntax VARCHAR, "value" VARCHAR), molecularConsequence STRUCT(code VARCHAR, "system" VARCHAR, "name" VARCHAR, iris VARCHAR[])[])[], value_gene_array STRUCT(gene VARCHAR, relationship_type VARCHAR, "source" VARCHAR)[])[]
+mappings : STRUCT(coding STRUCT("system" VARCHAR, code VARCHAR, iris VARCHAR[]), relation VARCHAR)[]
+members : VARCHAR[]
+constraints : STRUCT("type" VARCHAR, allele VARCHAR, "location" VARCHAR, copies BIGINT, copyChange VARCHAR, matchCharacteristic STRUCT("type" VARCHAR, primaryCoding STRUCT(code VARCHAR, "system" VARCHAR, iris VARCHAR[])), relations STRUCT("type" VARCHAR, primaryCoding STRUCT(code VARCHAR, "system" VARCHAR, iris VARCHAR[]))[])[]
+data : VARCHAR
+## condition
+id : VARCHAR
+type : VARCHAR
+conceptType : VARCHAR
+name : VARCHAR
+aliases : VARCHAR[]
+primaryCoding : STRUCT("name" VARCHAR, code VARCHAR, "system" VARCHAR, iris VARCHAR[])
+mappings : STRUCT(coding STRUCT("name" VARCHAR, code VARCHAR, "system" VARCHAR, iris VARCHAR[]), relation VARCHAR)[]
+data : VARCHAR
+## conditionSet
+id : VARCHAR
+type : VARCHAR
+conceptSetType : VARCHAR
+membershipOperator : VARCHAR
+concepts : VARCHAR[]
+data : VARCHAR
+## therapy
+key : VARCHAR
+value : VARCHAR
+name : VARCHAR
+concept_type : VARCHAR
+## therapyGroup
+key : VARCHAR
+value : VARCHAR
+membership_operator : VARCHAR
+members : VARCHAR[]
+## submitter
+id : VARCHAR
+type : VARCHAR
+name : VARCHAR
+data : VARCHAR
+## propositionPathogenicity
+id : VARCHAR
+type : VARCHAR
+predicate : VARCHAR
+subject_variant_id : VARCHAR
+object_id : VARCHAR
+object_type : VARCHAR
+condition_qualifier_id : VARCHAR
+gene_context_id : VARCHAR
+gene_context_name : VARCHAR
+submitted_gene_symbols : VARCHAR[]
+gene_context_source : VARCHAR
+mode_of_inheritance : VARCHAR
+penetrance : VARCHAR
+data : VARCHAR
+## propositionOncogenicity
+id : VARCHAR
+type : VARCHAR
+predicate : VARCHAR
+subject_variant_id : VARCHAR
+object_id : VARCHAR
+object_type : VARCHAR
+condition_qualifier_id : VARCHAR
+gene_context_id : VARCHAR
+gene_context_name : VARCHAR
+submitted_gene_symbols : VARCHAR[]
+gene_context_source : VARCHAR
+mode_of_inheritance : VARCHAR
+penetrance : VARCHAR
+data : VARCHAR
+## propositionSomaticClinicalImpact
+id : VARCHAR
+type : VARCHAR
+predicate : VARCHAR
+subject_variant_id : VARCHAR
+object_id : VARCHAR
+object_type : VARCHAR
+condition_qualifier_id : VARCHAR
+gene_context_id : VARCHAR
+gene_context_name : VARCHAR
+submitted_gene_symbols : VARCHAR[]
+gene_context_source : VARCHAR
+mode_of_inheritance : VARCHAR
+penetrance : VARCHAR
+data : VARCHAR
+## propositionClinvarCustom
+id : VARCHAR
+type : VARCHAR
+predicate : VARCHAR
+subject_variant_id : VARCHAR
+object_id : VARCHAR
+object_type : VARCHAR
+condition_qualifier_id : VARCHAR
+gene_context_id : VARCHAR
+gene_context_name : VARCHAR
+submitted_gene_symbols : VARCHAR[]
+gene_context_source : VARCHAR
+mode_of_inheritance : VARCHAR
+penetrance : VARCHAR
+data : VARCHAR
+## evidenceLine
+id : VARCHAR
+type : VARCHAR
+directionOfEvidenceProvided : VARCHAR
+evidenceOutcome : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+extensions : STRUCT("name" VARCHAR, value_submitted_condition_set STRUCT(conditionSet VARCHAR, condition VARCHAR, multiple_condition_explanation VARCHAR, concepts STRUCT(id VARCHAR, "name" VARCHAR, "type" VARCHAR, medgen_id VARCHAR, xrefs STRUCT(code VARCHAR, "system" VARCHAR)[], original_medgen_match STRUCT(id VARCHAR, "name" VARCHAR), direct_match VARCHAR, normalized_match VARCHAR, normalized_resolution VARCHAR, "mapping" STRUCT("type" VARCHAR, "ref" VARCHAR, "value" VARCHAR))[]), value_submitted_condition STRUCT(conditionSet VARCHAR, condition VARCHAR, id VARCHAR, "name" VARCHAR, "type" VARCHAR, medgen_id VARCHAR, xrefs STRUCT(code VARCHAR, "system" VARCHAR)[], original_medgen_match STRUCT(id VARCHAR, "name" VARCHAR), direct_match VARCHAR, normalized_match VARCHAR, normalized_resolution VARCHAR, "mapping" STRUCT("type" VARCHAR, "ref" VARCHAR, "value" VARCHAR)))[]
+target_proposition_id : VARCHAR
+data : VARCHAR
+## vcv_evidenceLine
+id : VARCHAR
+type : VARCHAR
+directionOfEvidenceProvided : VARCHAR
+strengthOfEvidenceProvided : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+evidence_items : VARCHAR[]
+data : VARCHAR
+## rcv_evidenceLine
+id : VARCHAR
+type : VARCHAR
+directionOfEvidenceProvided : VARCHAR
+strengthOfEvidenceProvided : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+evidence_items : VARCHAR[]
+data : VARCHAR
+## scv
+id : VARCHAR
+type : VARCHAR
+classification : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR, primaryCoding STRUCT(code VARCHAR, "system" VARCHAR), "extensions" STRUCT("name" VARCHAR, value_string VARCHAR)[])
+strength : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR, primaryCoding STRUCT(code VARCHAR, "system" VARCHAR))
+direction : VARCHAR
+quality : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+description : VARCHAR
+specifiedBy : STRUCT("type" VARCHAR, methodType VARCHAR, "name" VARCHAR, reportedIn STRUCT("type" VARCHAR, pmid VARCHAR, doi VARCHAR, urls VARCHAR[], "name" VARCHAR, documentType VARCHAR, "extensions" STRUCT("name" VARCHAR, value_string VARCHAR, value_boolean BOOLEAN)[]), "extensions" STRUCT("name" VARCHAR, value_document_array STRUCT("type" VARCHAR, pmid VARCHAR, doi VARCHAR, urls VARCHAR[], "name" VARCHAR, documentType VARCHAR, "extensions" STRUCT("name" VARCHAR, value_string VARCHAR, value_boolean BOOLEAN)[])[])[])
+reportedIn : STRUCT("type" VARCHAR, pmid VARCHAR, doi VARCHAR, urls VARCHAR[], "name" VARCHAR, documentType VARCHAR, "extensions" STRUCT("name" VARCHAR, value_string VARCHAR, value_boolean BOOLEAN)[])[]
+extensions : STRUCT("name" VARCHAR, value_string VARCHAR, value_submitted_condition_set STRUCT(conditionSet VARCHAR, condition VARCHAR, multiple_condition_explanation VARCHAR, concepts STRUCT(id VARCHAR, "name" VARCHAR, "type" VARCHAR, medgen_id VARCHAR, xrefs STRUCT(code VARCHAR, "system" VARCHAR)[], original_medgen_match STRUCT(id VARCHAR, "name" VARCHAR), direct_match VARCHAR, normalized_match VARCHAR, normalized_resolution VARCHAR, "mapping" STRUCT("type" VARCHAR, "ref" VARCHAR, "value" VARCHAR))[]), value_submitted_condition STRUCT(conditionSet VARCHAR, condition VARCHAR, id VARCHAR, "name" VARCHAR, "type" VARCHAR, medgen_id VARCHAR, xrefs STRUCT(code VARCHAR, "system" VARCHAR)[], original_medgen_match STRUCT(id VARCHAR, "name" VARCHAR), direct_match VARCHAR, normalized_match VARCHAR, normalized_resolution VARCHAR, "mapping" STRUCT("type" VARCHAR, "ref" VARCHAR, "value" VARCHAR)))[]
+proposition_id : VARCHAR
+proposition_section : VARCHAR
+contributions : STRUCT("type" VARCHAR, contributor VARCHAR, date DATE, activityType VARCHAR)[]
+has_evidence_lines : VARCHAR[]
+data : VARCHAR
+## vcv
+id : VARCHAR
+type : VARCHAR
+direction : VARCHAR
+strength : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+quality : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+classification : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR, "extensions" STRUCT("name" VARCHAR, "value" VARCHAR)[])
+extensions : STRUCT("name" VARCHAR, "value" VARCHAR)[]
+proposition_id : VARCHAR
+proposition_section : VARCHAR
+has_evidence_lines : VARCHAR[]
+data : VARCHAR
+## rcv
+id : VARCHAR
+type : VARCHAR
+direction : VARCHAR
+strength : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+quality : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR)
+classification : STRUCT("type" VARCHAR, conceptType VARCHAR, "name" VARCHAR, "extensions" STRUCT("name" VARCHAR, "value" VARCHAR)[])
+extensions : STRUCT("name" VARCHAR, "value" VARCHAR)[]
+proposition_id : VARCHAR
+proposition_section : VARCHAR
+has_evidence_lines : VARCHAR[]
+data : VARCHAR
