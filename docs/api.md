@@ -1,6 +1,6 @@
 # ClinVar GKM browser: API
 
-Status: draft, 25 October 2026. **Built so far:** releases, entity items (variants, SCVs, genes, submitters, conditions), `/variants/{id}/scvs`, `/scvs` and `/scvs/summary` over the shared filter and dimension registries (`packages/shared/src/query`), `/search`, and `/vocabularies`. Not yet: `/variants` lists and summaries, `/scv-pairs`, export formats, `POST /query`, local-only endpoints. The REST API the web app uses and other programs can use: the resources, the shared filter language, summaries (crosstabs), conflict pairs, paging, formats and errors, and how the server turns a request into SQL. Endpoint names and parameters are a first design; the principles are what to hold on to. The tables behind it are in [schema.md](schema.md). The features built on it, and their order, are in [features.md](features.md#build-order).
+Status: draft, 25 October 2026. Phase 2's additions are planned in [Phase 2 plan](#phase-2-plan-clinvar-miners-features-on-this-api). **Built so far:** releases, entity items (variants, SCVs, genes, submitters, conditions), `/variants/{id}/scvs`, `/scvs` and `/scvs/summary` over the shared filter and dimension registries (`packages/shared/src/query`), `/search`, and `/vocabularies`. Not yet: `/variants` lists and summaries, `/scv-pairs`, export formats, `POST /query`, local-only endpoints. The REST API the web app uses and other programs can use: the resources, the shared filter language, summaries (crosstabs), conflict pairs, paging, formats and errors, and how the server turns a request into SQL. Endpoint names and parameters are a first design; the principles are what to hold on to. The tables behind it are in [schema.md](schema.md). The features built on it, and their order, are in [features.md](features.md#build-order).
 
 ## Principles
 
@@ -181,6 +181,105 @@ apps/server/src/export/        streaming TSV/CSV/NDJSON writers, parquet via COP
 - **A filter or dimension is a registry entry:** its URL name, Zod type, the tables it needs, and its SQL. Adding one doesn't touch the routes.
 - **The compiler only emits joins a query needs.** A `gene` filter adds the `variant_gene` join; a `condition` grouping adds `scv_condition`. Prefixes become ranges ([search.md](search.md#lookups)). Conditions on optional joins are written as `CASE` expressions, never `AND` in `ON` clauses ([schema.md](schema.md#load-performance-what-we-learned)).
 - **Tests** run the compiler against fixed specs (snapshot SQL), and run specs against a small fixture release built from a few genes.
+
+## Phase 2 plan: ClinVar Miner's features on this API
+
+Planned 25 October 2026, for the workflows in [features.md](features.md#what-curators-did-with-clinvar-miner).
+
+### Three resources, one query model
+
+Every Phase 2 view is a list or a summary over one of three row types. They share the filter and dimension registries (`packages/shared/src/query`) and the SQL compiler:
+
+| Resource | A row is | Built from | Endpoints |
+| --- | --- | --- | --- |
+| SCVs | one submission | the **SCV base**: `scv` filtered by the SCV filters | `/scvs`, `/scvs/summary` (exist) |
+| SCV pairs | two SCVs on the same variant and conflict-detectable classification type, with their conflict level | the **pair base**: the SCV base self-joined on variant and type, with `a.`/`b.` side filters and pair options | `/scv-pairs`, `/scv-pairs/summary` (new) |
+| Variants | one variant, with its conflict status | the SCV base grouped by variant, and the pair base for conflict status | `/variants`, `/variants/summary` (new) |
+
+The bases are SQL CTEs that the compiler emits, not separate code paths. A list pages rows of a base; a summary groups them by registered dimensions. So the six endpoints share their parsing, filters, paging, labels, export and tests.
+
+**The pair base.**
+- **Sides:** side A is SCVs matching the unprefixed filters plus the `a.` filters; side B, the unprefixed plus `b.` filters.
+- **Which pairs:** one SCV from each side, on the same variant, with the same conflict-detectable classification type (pathogenicity or oncogenicity).
+- **Options:**
+  - `same_condition` (default true): the SCVs share a condition, where "not provided" and "not specified" match any condition (proposed; [features.md](features.md#open-questions), question 6);
+  - `flagged` (default `exclude`: flagged SCVs are left out of pairs; proposed, question 5);
+  - `distinct_submitters` (default true; false for a lab against itself).
+- **Each pair's conflict level** comes from one SQL function in the shared package, over the two terms' significance and codes ([data.md](data.md#conflicts)):
+  - 5: P/LP against VUS or B/LB;
+  - 3: VUS against B/LB;
+  - 2: same significance, different term;
+  - 1: same term, different submitted text;
+  - 0: agreement.
+  - Level 4 (category) has no cases now that ClinVar-GKM separates risk factor, drug response and the other types.
+- **Unordered by default:** without side filters, each pair appears once (`a.scv_id < b.scv_id`). With side filters, pairs are directed (A is the lab, B the others).
+
+**A variant's conflict status** is computed from the pair base, so it always agrees with the pairs. It's one of:
+- `single`: no partner on side B;
+- `none`: partners, all agreeing;
+- the highest level of its pairs, 1 to 5.
+
+This is ClinVar Miner's overview row.
+
+Measured on the 2026-10-18 data:
+- every pair on every variant, with levels, same-condition matching and flagged SCVs excluded: 0.45 s;
+- one lab against every other lab (Labcorp: 1.4M pairs with 1,727 labs): 0.12 s.
+
+### Changes to what exists
+
+| Change | Why |
+| --- | --- |
+| **Side-prefixed filters** (`a.submitter`, `b.min_stars`, …): every SCV filter, with `a.`/`b.` prefixes, on pair and variant resources | Separate filters for each side of a comparison |
+| **Pair options** `min_conflict_level`, `conflict_level`, `same_condition`, `flagged`, `distinct_submitters`, on pair and variant resources | Conflict thresholds, ClinVar Miner's "report conflict between different conditions" |
+| **Dimensions take a side:** the registry's key and join functions read columns through a per-side accessor, so `submitter`, `term`, `bucket`, `stars`, `method` also exist as `a.submitter`, `b.term`, …; plus `conflict_level` (pairs, variants) | Term × term grids; "other labs" tables |
+| **More measures:** `pairs` (pair resources); variant measures by status (`single`, `none`, `level_1` … `level_5`, `conflicting`) as a `conflict_level` dimension | Scorecards and rates |
+| **`match` on summaries:** a text filter on the first dimension's labels (a gene symbol, lab or condition name), case-insensitive | Per-table search on index pages and the "other labs" table; paged tables can't be searched in the browser |
+| **`format=tsv` and `csv`** on every list and summary, streamed and unpaged | "Download table as spreadsheet", for work lists. The rest of export (NDJSON, parquet) stays in Phase 4 |
+| **`/vocabularies`** adds conflict levels (code, label, example), relationship labels and the placeholder condition IDs | Plain-language labels and explanations next to the numbers |
+| **Shares are computed in the browser** from counts and totals the API already returns; the API returns no percentages | One source of numbers; any share is count ÷ the right total |
+| **Derivation:** `scv.condition_ids INTEGER[]` (expanded, placeholders left out), and `condition.placeholder BOOLEAN` for "not provided"/"not specified" | Building the lists per query costs 0.8 s; as a column, the overlap test is cheap |
+
+Entity endpoints (`/genes/{id}` and the like) stay small: header facts and counts. Their tabs use the lists and summaries above with the entity fixed, so a tab and the explorer give the same numbers.
+
+### New endpoints
+
+- **`GET /scv-pairs`:** rows with both SCVs embedded as compact SCV rows (submitter, term, stars, date last evaluated, conditions, comment), the variant's ID and name, and the level. Sort by level, variant, either side's date.
+- **`GET /scv-pairs/summary`:** counts of pairs or variants by up to two dimensions (`a.term` × `b.term`, `b.submitter` × `conflict_level`, …).
+- **`GET /variants`:** rows with the variant's name, genes, the aggregate call and stars, SCV counts by bucket, submitter count, and the conflict status under the request's filters. Sort by status, SCV count, submitter count, name.
+- **`GET /variants/summary`:** variant counts by up to two dimensions, including `conflict_level`, `gene`, `condition`, `variant_type`.
+
+No endpoint is specific to a page. Presets ("this lab against expert panels") are named sets of parameters in `packages/shared/src/presets.ts`, used by the web app, not API routes.
+
+### Feature by feature
+
+Each tab or page is a few requests to these endpoints; `{X}`, `{Y}` are submitter IDs, `{G}` a gene ID.
+
+| Feature | Requests | Status |
+| --- | --- | --- |
+| **Submitter → Conflicts tab:** scorecard | `/variants/summary?a.submitter={X}&group_by=conflict_level` | new endpoint |
+| … term × term grid against all others | `/scv-pairs/summary?a.submitter={X}&group_by=a.term,b.term` | new |
+| … other labs ranked by disagreement | `/scv-pairs/summary?a.submitter={X}&group_by=b.submitter,conflict_level&measure=variants&match=…` | new |
+| … against expert panels | the same with `b.submission_level=EP,PG` | side filters |
+| … against itself | the same with `b.submitter={X}&distinct_submitters=false` | pair option |
+| **Head-to-head** | `/variants/summary?a.submitter={X}&b.submitter={Y}&group_by=conflict_level`; `/scv-pairs/summary?…&group_by=a.term,b.term`; `/scv-pairs?a.submitter={X}&b.submitter={Y}&min_conflict_level=1` | new |
+| … a grid cell's variants | `/scv-pairs?a.submitter={X}&b.submitter={Y}&a.term=lp&b.term=vus` | new |
+| **Gene → Conflicts tab** | `/variants/summary?gene={G}&group_by=conflict_level`; `/scv-pairs/summary?gene={G}&group_by=a.term,b.term`; `/variants?gene={G}&min_conflict_level=2`, with each row's SCVs from `/variants/{id}/scvs` (exists) | new |
+| **Condition → Conflicts tab** | the same with `condition={C}` | new |
+| **Gene → Overview tab:** submitters × classification, conditions × classification | `/scvs/summary?gene={G}&group_by=submitter,bucket`; `…&group_by=condition,bucket` | **exists** |
+| **Submitter → Overview tab:** genes × classification | `/scvs/summary?submitter={X}&group_by=gene,bucket` | **exists** |
+| **Index pages:** genes, conditions, submitters, terms, with counts | `/scvs/summary?group_by=gene&measure=scvs,variants,submitters&match=…` | exists, plus `match` |
+| … with conflict rates | `/variants/summary?group_by=gene,conflict_level` | new |
+| **Comparing genes or labs** | the index requests with `gene={G1},{G2},…` | new (via the above) |
+| **Explorer** over SCVs, variants or pairs | any of the six endpoints with the full filter bar; presets are URLs | partly exists |
+| **Work list download** | any list with `format=tsv` | change |
+
+### Build order within Phase 2
+
+1. **Derivation:** `scv.condition_ids`, `condition.placeholder`. Rebuild the release and the fixture.
+2. **Shared query model:** side-prefixed filters, pair options, side-aware dimensions, the conflict-level SQL function, `match`. Unit tests for each.
+3. **`/scv-pairs` and `/scv-pairs/summary`,** then **`/variants` and `/variants/summary`.** API tests against the fixture, which has conflicting HFE variants. Spot checks against ClinVar Miner running on the same genes (`~/dev/clinvar-miner-fork`), allowing for the known differences (somatic separated, flagged excluded, placeholder conditions).
+4. **`format=tsv`** for lists and summaries.
+5. **Web:** submitter Conflicts tab, head-to-head page, gene and condition Conflicts tabs, then the Overview tabs, index pages, explorer and presets.
 
 ## Open questions
 
