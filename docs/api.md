@@ -100,7 +100,7 @@ A pair is two SCVs on the same variant with the same classification type. That's
 - **Each side has its own filters:** `a.submitter`, `b.submitter`, `a.min_stars`, `b.method` and so on, for the "this submitter's SCVs vs everyone else's" views. Unprefixed filters apply to both sides. Variant filters apply to the variant.
 - **Pair filters:**
   - `min_conflict_level` (0–5, on ClinVar Miner's scale in [data.md](data.md#conflicts));
-  - `same_condition` (default `true`: the two SCVs share a condition, after MONDO normalization where available);
+  - `condition_match` (default `strict`: the two SCVs share a condition; also `wildcard` and `any`, see [Phase 2 plan](#three-resources-one-query-model));
   - `distinct_submitters` (default `true`).
 - **Each pair is listed once,** ordered `a.scv_id < b.scv_id`, unless side filters make `a` and `b` mean different things. Then pairs are directed: `a` matches the `a.` filters.
 
@@ -202,7 +202,7 @@ The bases are SQL CTEs that the compiler emits, not separate code paths. A list 
 - **Sides:** side A is SCVs matching the unprefixed filters plus the `a.` filters; side B, the unprefixed plus `b.` filters.
 - **Which pairs:** one SCV from each side, on the same variant, with the same conflict-detectable classification type (pathogenicity or oncogenicity).
 - **Options:**
-  - `same_condition` (default true): the SCVs share a condition, where "not provided" and "not specified" match any condition (proposed; [features.md](features.md#open-questions), question 6);
+  - `condition_match`: `strict` (default; the SCVs share a condition), `wildcard` (an SCV with only "not provided"/"not specified" matches any condition) or `any` (conditions ignored, as in ClinVar's aggregate). Decided 25 October 2026 ([features.md](features.md#open-questions), question 6);
   - `flagged` (default `exclude`: flagged SCVs are left out of pairs, decided 25 October 2026; they still appear in every SCV list, grouped separately, and responses count how many were left out);
   - `distinct_submitters` (default true; false for a lab against itself).
 - **Each pair's conflict level** comes from one SQL function in the shared package, over the two terms' significance and codes ([data.md](data.md#conflicts)):
@@ -230,14 +230,14 @@ Measured on the 2026-10-18 data:
 | Change | Why |
 | --- | --- |
 | **Side-prefixed filters** (`a.submitter`, `b.min_stars`, …): every SCV filter, with `a.`/`b.` prefixes, on pair and variant resources | Separate filters for each side of a comparison |
-| **Pair options** `min_conflict_level`, `conflict_level`, `same_condition`, `flagged`, `distinct_submitters`, on pair and variant resources | Conflict thresholds, ClinVar Miner's "report conflict between different conditions" |
+| **Pair options** `min_conflict_level`, `conflict_level`, `condition_match`, `flagged`, `distinct_submitters`, on pair and variant resources | Conflict thresholds; ClinVar Miner's "report conflict between different conditions", and two more rules |
 | **Dimensions take a side:** the registry's key and join functions read columns through a per-side accessor, so `submitter`, `term`, `bucket`, `stars`, `method` also exist as `a.submitter`, `b.term`, …; plus `conflict_level` (pairs, variants) | Term × term grids; "other labs" tables |
 | **More measures:** `pairs` (pair resources); variant measures by status (`single`, `none`, `level_1` … `level_5`, `conflicting`) as a `conflict_level` dimension | Scorecards and rates |
 | **`match` on summaries:** a text filter on the first dimension's labels (a gene symbol, lab or condition name), case-insensitive | Per-table search on index pages and the "other labs" table; paged tables can't be searched in the browser |
 | **`format=tsv` and `csv`** on every list and summary, streamed and unpaged | "Download table as spreadsheet", for work lists. The rest of export (NDJSON, parquet) stays in Phase 4 |
 | **`/vocabularies`** adds conflict levels (code, label, example), relationship labels and the placeholder condition IDs | Plain-language labels and explanations next to the numbers |
 | **Shares are computed in the browser** from counts and totals the API already returns; the API returns no percentages | One source of numbers; any share is count ÷ the right total |
-| **Derivation:** `scv.condition_ids INTEGER[]` (expanded, placeholders left out), and `condition.placeholder BOOLEAN` for "not provided"/"not specified" | Building the lists per query costs 0.8 s; as a column, the overlap test is cheap |
+| **Derivation:** `scv.condition_ids INTEGER[]` (all its conditions, sets expanded), `scv.condition_unspecified BOOLEAN` (its only conditions are "not provided"/"not specified"), and `condition.placeholder BOOLEAN` | Building the lists per query costs 0.8 s; as columns, the condition rules are cheap |
 
 Entity endpoints (`/genes/{id}` and the like) stay small: header facts and counts. Their tabs use the lists and summaries above with the entity fixed, so a tab and the explorer give the same numbers.
 
@@ -275,7 +275,7 @@ Each tab or page is a few requests to these endpoints; `{X}`, `{Y}` are submitte
 
 ### Build order within Phase 2
 
-1. **Derivation:** `scv.condition_ids`, `condition.placeholder`. Rebuild the release and the fixture.
+1. **Derivation:** `scv.condition_ids`, `scv.condition_unspecified`, `condition.placeholder`. Rebuild the release and the fixture.
 2. **Shared query model:** side-prefixed filters, pair options, side-aware dimensions, the conflict-level SQL function, `match`. Unit tests for each.
 3. **`/scv-pairs` and `/scv-pairs/summary`,** then **`/variants` and `/variants/summary`.** API tests against the fixture, which has conflicting HFE variants. Spot checks against ClinVar Miner running on the same genes (`~/dev/clinvar-miner-fork`), allowing for the known differences (somatic separated, flagged excluded, placeholder conditions).
 4. **`format=tsv`** for lists and summaries.
