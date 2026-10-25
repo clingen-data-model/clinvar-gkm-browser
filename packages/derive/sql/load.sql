@@ -310,7 +310,7 @@ SELECT * FROM stage.prop WHERE id LIKE 'SCV%';
 
 INSERT INTO scv
 SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification_type,
-       s.submission_level, s.review_status, s.classification, s.classification_code,
+       s.submission_level, s.review_status, s.classification, s.classification_code, ct.term,
        s.submitted_classification, s.direction, s.strength, s.collection_methods,
        s.assertion_criteria, s.description, s.date_submitted, s.date_created,
        s.date_last_evaluated, s.local_key,
@@ -327,11 +327,19 @@ SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification
        r.statement_key
 FROM stage.scv_flat s
 JOIN stage.scv_prop p ON p.id = s.proposition_id
+LEFT JOIN classification_term ct
+    ON ct.classification_type = s.classification_type AND ct.source_code = lower(s.classification_code)
 -- CASE keeps this an equi-join; with AND in ON, DuckDB plans a nested loop (10 minutes here).
 LEFT JOIN condition_set cs ON cs.condition_set_id = CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END
 LEFT JOIN stage.scv_citing v ON v.tree = 'vcv' AND v.scv_statement_id = s.scv_statement_id
 LEFT JOIN stage.scv_citing r ON r.tree = 'rcv' AND r.scv_statement_id = s.scv_statement_id
 ORDER BY p.variation_id, s.scv_id;
+
+-- Terms the vocabulary doesn't know load as published, with term NULL, and are listed here.
+INSERT INTO reference_issue
+SELECT 'scv', 'classification_code', 'classification_term', 'source_code',
+       classification_type || ': ' || coalesce(classification_code, '(none)'), count(*)
+FROM scv WHERE term IS NULL GROUP BY ALL;
 
 DROP TABLE stage.scv_flat;
 DROP TABLE stage.scv_prop;

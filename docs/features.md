@@ -107,7 +107,7 @@ Needed before anything else is useful.
 
 | ClinVar Miner feature | Status |
 | --- | --- |
-| Variants by MONDO term (rollups over the MONDO hierarchy) | Needs the MONDO ontology, not in ClinVar-GKM. After phase 3, as a new external source |
+| Variants by MONDO term (rollups over the MONDO hierarchy) | Needs the MONDO ontology, not in ClinVar-GKM. After phase 3, as a new external source. Prior work on fetching and reading MONDO: github.com/theferrit32/claude-gencc-demo |
 | Submitter country and the country map | Needs NCBI's `organization_summary.txt`. A country column, low priority; no map |
 | gnomAD allele frequency on the variant page | Needs gnomAD. Link out instead |
 | Gene type filter and antisense-gene merging | Check with users before rebuilding |

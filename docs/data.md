@@ -62,19 +62,24 @@ Expected sizes are an M0 output. Leaving out `data` and storing integers should 
 
 ### Conflicts
 
-We keep ClinVar Miner's conflict scale, which is finer than ClinVar's three-group conflict facet. For each pair of SCVs on the same variant in the same lane:
+**Classification vocabulary (decided 25 October 2026):** terms, significance groups, conflict-detectable types and review-status ranks come from ClinGen's BigQuery tooling, so this app agrees with the curator reports built there (clinvar-ingest-bq-tools, `scripts/dataset-preparation/00-setup-translation-tables.sql` at 2ca57d8). They're seeded in `schema.sql`, with every SCV matched to its term at load ([schema.md](schema.md)).
+- **Significance:** 2 is pathogenic/likely pathogenic, including low penetrance and risk alleles; 1 is uncertain, including the VUS sub-tiers and uncertain risk allele; 0 is benign/likely benign.
+- **Conflicts are only computed within pathogenicity and oncogenicity,** bq-tools' conflict-detectable types. Drug response, risk factor, somatic clinical impact and the other types never conflict.
+- **bq-tools' groups map onto the ClinVar Miner scale below:** its non-clinsig conflict (VUS with B/LB) is level 3, and its clinsig conflict (P/LP with anything else) is level 5. bq-tools counts a variant as conflicting only at its top review rank; ClinVar Miner's minimum-stars filters approximate that, and we can offer both.
+
+We keep ClinVar Miner's conflict scale, which is finer than ClinVar's three-group conflict facet. For each pair of SCVs on the same variant with the same conflict-detectable classification type:
 
 | Level | Meaning |
 | --- | --- |
 | 0 | No conflict: same term, or either side "not provided" |
 | 1 | Synonymous: different term, same normalized term |
-| 2 | Confidence: benign vs likely benign, or pathogenic vs likely pathogenic |
+| 2 | Confidence: same significance, different term (P vs LP, B vs LB, VUS vs VUS-high) |
 | 3 | (Likely) benign vs VUS |
-| 4 | Category: a non-ACMG term against an ACMG one (e.g. risk factor vs benign) |
+| 4 | Category: a non-ACMG term against an ACMG one (e.g. risk factor vs benign). Rare now that ClinVar-GKM separates those into their own classification types |
 | 5 | Clinically significant: (likely) benign or VUS vs (likely) pathogenic |
 
 - By default a pair counts only when both SCVs share a MONDO-normalized condition; a filter turns that off. This is ClinVar Miner's default.
-- VUS sub-tiers (ClinVar now accepts VUS-low/mid/high) and the somatic lanes need their own scales. To design with users.
+- VUS sub-tiers are significance 1, like VUS, so they never make a level 3 or 5 conflict with it, only level 2.
 - **Storage:** ClinVar Miner stored every pair, including each SCV paired with itself, for every release; at 0.58M SCVs that was 31.8 GiB. We store SCVs once. Pairs come from either a narrow pairs table (variant, two SCV numbers, two submitter IDs, level, same-condition flag) restricted to variants with two or more SCVs in a lane, or a per-query self-join of `scv`, which DuckDB handles well for one gene or one submitter. M0 measures both.
 - NCBI publishes its own pairwise file monthly, `summary_of_conflicting_interpretations.txt` (about 2 GB). We can check our levels against its `Rank_diff`, but we don't depend on it: it isn't part of ClinVar-GKM and it's monthly, not weekly.
 

@@ -46,65 +46,136 @@ CREATE TABLE reference_issue (
 -- ---------------------------------------------------------------------------------------------
 -- Vocabularies
 
+-- The classification vocabulary follows ClinGen's BigQuery tooling, so this app agrees with the
+-- curator reports built there: clingen-data-model/clinvar-ingest-bq-tools,
+-- scripts/dataset-preparation/00-setup-translation-tables.sql at 2ca57d8 (2026-10-20):
+-- clinvar_proposition_types, clinvar_clinsig_types, status_definitions, submission_level.
+
 -- Classification types: the code in a proposition or statement id (SCV000056982-ASSOC,
--- VCV000051592.122-G-PATH-CP). Lane G is germline, S somatic.
+-- VCV000051592.122-G-PATH-CP). Lane G is germline, S somatic. conflict_detectable: whether two
+-- SCVs of this type can conflict (bq-tools' clinvar_proposition_types.conflict_detectable).
 CREATE TABLE classification_type (
-    code              VARCHAR PRIMARY KEY,
-    lane              VARCHAR NOT NULL CHECK (lane IN ('G', 'S')),
-    proposition_type  VARCHAR NOT NULL UNIQUE,
-    label             VARCHAR NOT NULL,
-    statement_level   BOOLEAN NOT NULL  -- false: only targeted by SCV evidence lines (DIAG, PROG, TR)
+    code                 VARCHAR PRIMARY KEY,
+    lane                 VARCHAR NOT NULL CHECK (lane IN ('G', 'S')),
+    proposition_type     VARCHAR NOT NULL UNIQUE,
+    label                VARCHAR NOT NULL,
+    statement_level      BOOLEAN NOT NULL,  -- false: only targeted by SCV evidence lines (DIAG, PROG, TR)
+    conflict_detectable  BOOLEAN NOT NULL,
+    display_order        INTEGER NOT NULL
 );
 
 INSERT INTO classification_type VALUES
-    ('PATH',    'G', 'VariantPathogenicityProposition',                'Pathogenicity',                     true),
-    ('NP',      'G', 'ClinvarNotProvidedProposition',                  'Not provided',                      true),
-    ('DR',      'G', 'ClinvarDrugResponseProposition',                 'Drug response',                     true),
-    ('OTH',     'G', 'ClinvarOtherProposition',                        'Other',                             true),
-    ('RF',      'G', 'ClinvarRiskFactorProposition',                   'Risk factor',                       true),
-    ('ASSOC',   'G', 'ClinvarAssociationProposition',                  'Association',                       true),
-    ('AFF',     'G', 'ClinvarAffectsProposition',                      'Affects',                           true),
-    ('CDFS',    'G', 'ClinvarConflictingDataFromSubmitterProposition', 'Conflicting data from submitters',  true),
-    ('PROTECT', 'G', 'ClinvarProtectiveProposition',                   'Protective',                        true),
-    ('CS',      'G', 'ClinvarConfersSensitivityProposition',           'Confers sensitivity',               true),
-    ('UNDEF',   'G', 'ClinvarUndefinedProposition',                    'Undefined',                         true),
-    ('ONCO',    'S', 'VariantOncogenicityProposition',                 'Oncogenicity',                      true),
-    ('SCI',     'S', 'VariantClinicalSignificanceProposition',         'Somatic clinical impact',           true),
-    ('DIAG',    'S', 'VariantDiagnosticProposition',                   'Diagnostic',                        false),
-    ('PROG',    'S', 'VariantPrognosticProposition',                   'Prognostic',                        false),
-    ('TR',      'S', 'VariantTherapeuticResponseProposition',          'Therapeutic response',              false);
+    ('PATH',    'G', 'VariantPathogenicityProposition',                'Pathogenicity',                     true,  true,  10),
+    ('SCI',     'S', 'VariantClinicalSignificanceProposition',         'Somatic clinical impact',           true,  false, 11),
+    ('ONCO',    'S', 'VariantOncogenicityProposition',                 'Oncogenicity',                      true,  true,  12),
+    ('AFF',     'G', 'ClinvarAffectsProposition',                      'Affects',                           true,  false, 20),
+    ('ASSOC',   'G', 'ClinvarAssociationProposition',                  'Association',                       true,  false, 30),
+    ('CDFS',    'G', 'ClinvarConflictingDataFromSubmitterProposition', 'Conflicting data from submitters',  true,  false, 35),
+    ('CS',      'G', 'ClinvarConfersSensitivityProposition',           'Confers sensitivity',               true,  false, 40),
+    ('DR',      'G', 'ClinvarDrugResponseProposition',                 'Drug response',                     true,  false, 50),
+    ('NP',      'G', 'ClinvarNotProvidedProposition',                  'Not provided',                      true,  false, 60),
+    ('OTH',     'G', 'ClinvarOtherProposition',                        'Other',                             true,  false, 70),
+    ('PROTECT', 'G', 'ClinvarProtectiveProposition',                   'Protective',                        true,  false, 80),
+    ('RF',      'G', 'ClinvarRiskFactorProposition',                   'Risk factor',                       true,  false, 90),
+    ('UNDEF',   'G', 'ClinvarUndefinedProposition',                    'Undefined',                         true,  false, 95),
+    ('PROG',    'S', 'VariantPrognosticProposition',                   'Prognostic',                        false, false, 100),
+    ('DIAG',    'S', 'VariantDiagnosticProposition',                   'Diagnostic',                        false, false, 110),
+    ('TR',      'S', 'VariantTherapeuticResponseProposition',          'Therapeutic response',              false, false, 120);
+
+-- Classification terms, per classification type (bq-tools' clinvar_clinsig_types). source_code is
+-- ClinVar-GKM's classification.primaryCoding.code, lower-cased: the key an SCV is matched on.
+-- significance: 2 P/LP (clinically significant), 1 uncertain, 0 B/LB (not significant).
+-- bucket: P, V, B for the conflict-detectable types; O (other) and N (not provided) elsewhere.
+CREATE TABLE classification_term (
+    classification_type  VARCHAR NOT NULL REFERENCES classification_type (code),
+    term                 VARCHAR NOT NULL,  -- bq-tools' code: p, lp, vus-h, era, t1, ...
+    source_code          VARCHAR NOT NULL,
+    label                VARCHAR NOT NULL,
+    significance         INTEGER NOT NULL CHECK (significance BETWEEN 0 AND 2),
+    bucket               VARCHAR NOT NULL CHECK (bucket IN ('P', 'V', 'B', 'O', 'N')),
+    display_order        INTEGER NOT NULL,
+    PRIMARY KEY (classification_type, term),
+    UNIQUE (classification_type, source_code)
+);
+
+INSERT INTO classification_term VALUES
+    ('PATH', 'p',      'pathogenic',                        'Pathogenic',                        2, 'P', 10),
+    ('PATH', 'lp',     'likely pathogenic',                 'Likely pathogenic',                 2, 'P', 11),
+    ('PATH', 'p/lp',   'pathogenic/likely pathogenic',      'Pathogenic/Likely pathogenic',      2, 'P', 12),
+    ('PATH', 'p-lp',   'pathogenic, low penetrance',        'Pathogenic, low penetrance',        2, 'P', 13),
+    ('PATH', 'lp-lp',  'likely pathogenic, low penetrance', 'Likely pathogenic, low penetrance', 2, 'P', 14),
+    ('PATH', 'era',    'established risk allele',           'Established risk allele',           2, 'P', 15),
+    ('PATH', 'lra',    'likely risk allele',                'Likely risk allele',                2, 'P', 16),
+    ('PATH', 'vus',    'uncertain significance',            'Uncertain significance',            1, 'V', 20),
+    ('PATH', 'vus-h',  'vus-high',                          'VUS-high',                          1, 'V', 21),
+    ('PATH', 'vus-m',  'vus-mid',                           'VUS-mid',                           1, 'V', 22),
+    ('PATH', 'vus-l',  'vus-low',                           'VUS-low',                           1, 'V', 23),
+    ('PATH', 'ura',    'uncertain risk allele',             'Uncertain risk allele',             1, 'V', 25),
+    ('PATH', 'b',      'benign',                            'Benign',                            0, 'B', 30),
+    ('PATH', 'lb',     'likely benign',                     'Likely benign',                     0, 'B', 31),
+    ('PATH', 'b/lb',   'benign/likely benign',              'Benign/Likely benign',              0, 'B', 32),
+    ('ONCO', 'o',      'oncogenic',                         'Oncogenic',                         2, 'P', 10),
+    ('ONCO', 'lo',     'likely oncogenic',                  'Likely oncogenic',                  2, 'P', 11),
+    ('ONCO', 'vus',    'uncertain significance',            'Uncertain significance',            1, 'V', 20),
+    ('ONCO', 'b',      'benign',                            'Benign',                            0, 'B', 30),
+    ('ONCO', 'lb',     'likely benign',                     'Likely benign',                     0, 'B', 31),
+    ('ONCO', 'b/lb',   'benign/likely benign',              'Benign/Likely benign',              0, 'B', 32),
+    ('SCI',  't1',     'tier 1',                            'Tier I (Strong)',                   2, 'O', 10),
+    ('SCI',  't2',     'tier 2',                            'Tier II (Potential)',               2, 'O', 11),
+    ('SCI',  't3',     'tier 3',                            'Tier III (Unknown)',                1, 'O', 20),
+    ('SCI',  't4',     'tier 4',                            'Tier IV (Benign/Likely benign)',    0, 'O', 32),
+    ('AFF',     'aff',     'affects',                          'Affects',                          2, 'O', 100),
+    ('ASSOC',   'assoc',   'association',                      'Association',                      2, 'O', 110),
+    ('ASSOC',   'assocnf', 'association not found',            'Association not found',            0, 'O', 111),
+    ('CDFS',    'cdfs',    'conflicting data from submitters', 'Conflicting data from submitters', 1, 'O', 115),
+    ('CS',      'cs',      'confers sensitivity',              'Confers sensitivity',              2, 'O', 120),
+    ('DR',      'dr',      'drug response',                    'Drug response',                    2, 'O', 130),
+    ('NP',      'np',      'not provided',                     'Not provided',                     0, 'N', 140),
+    ('OTH',     'oth',     'other',                            'Other',                            0, 'O', 150),
+    ('PROTECT', 'protect', 'protective',                       'Protective',                       0, 'O', 160),
+    ('RF',      'rf',      'risk factor',                      'Risk factor',                      2, 'O', 170);
 
 -- Submission levels: an SCV's quality.name, and the level suffix of aggregate statements.
+-- rank as in bq-tools' submission_level; the highest present sets an aggregate's call, and FLAG
+-- never does.
 CREATE TABLE submission_level (
     code          VARCHAR PRIMARY KEY,
     quality_name  VARCHAR NOT NULL UNIQUE,
-    precedence    INTEGER NOT NULL  -- the highest level present sets an aggregate's call; FLAG never does
+    rank          INTEGER NOT NULL UNIQUE
 );
 
 INSERT INTO submission_level VALUES
-    ('PG',   'practice guidelines',            5),
-    ('EP',   'expert panel',                   4),
-    ('CP',   'criteria provided',              3),
-    ('NOCP', 'no assertion criteria provided', 2),
-    ('NOCL', 'no classification',              1),
-    ('FLAG', 'flagged',                        0);
+    ('PG',   'practice guidelines',            4),
+    ('EP',   'expert panel',                   3),
+    ('CP',   'criteria provided',              1),
+    ('NOCP', 'no assertion criteria provided', 0),
+    ('NOCL', 'no classification',              -1),
+    ('FLAG', 'flagged',                        -3);
 
--- Review statuses, SCV and aggregate, with ClinVar's star rating.
+-- Review statuses, SCV and aggregate, with bq-tools' rank (status_definitions) and ClinVar's
+-- stars (the rank, floored at 0). Includes statuses ClinVar has retired, for older releases.
 CREATE TABLE review_status (
-    status  VARCHAR PRIMARY KEY,
-    stars   INTEGER NOT NULL CHECK (stars BETWEEN 0 AND 4)
+    status   VARCHAR PRIMARY KEY,
+    rank     INTEGER NOT NULL,
+    stars    INTEGER NOT NULL CHECK (stars BETWEEN 0 AND 4),
+    current  BOOLEAN NOT NULL  -- false: retired by ClinVar in 2024
 );
 
 INSERT INTO review_status VALUES
-    ('practice guideline',                                   4),
-    ('reviewed by expert panel',                             3),
-    ('criteria provided, multiple submitters, no conflicts', 2),
-    ('criteria provided, multiple submitters',               2),
-    ('criteria provided, conflicting classifications',       1),
-    ('criteria provided, single submitter',                  1),
-    ('no assertion criteria provided',                       0),
-    ('no classification provided',                           0),
-    ('flagged submission',                                   0);
+    ('practice guideline',                                     4,  4, true),
+    ('reviewed by expert panel',                               3,  3, true),
+    ('criteria provided, multiple submitters, no conflicts',   2,  2, true),
+    ('criteria provided, multiple submitters',                 2,  2, true),
+    ('criteria provided, conflicting classifications',         1,  1, true),
+    ('criteria provided, single submitter',                    1,  1, true),
+    ('no assertion criteria provided',                         0,  0, true),
+    ('no classification provided',                             -1, 0, true),
+    ('no classification for the single variant',               -2, 0, true),
+    ('no classifications from unflagged records',              -3, 0, true),
+    ('flagged submission',                                     -3, 0, true),
+    ('criteria provided, conflicting interpretations',         1,  1, false),
+    ('no assertion provided',                                  -1, 0, false),
+    ('no interpretation for the single variant',               -2, 0, false);
 
 -- ---------------------------------------------------------------------------------------------
 -- Genome: VRS objects
@@ -345,7 +416,10 @@ CREATE TABLE scv (
     submission_level        VARCHAR NOT NULL REFERENCES submission_level (code),
     review_status           VARCHAR NOT NULL REFERENCES review_status (status),
     classification          VARCHAR,  -- as ClinVar shows it, e.g. Likely benign; not case-normalized
-    classification_code     VARCHAR,  -- primaryCoding.code, e.g. likely_benign
+    classification_code     VARCHAR,  -- primaryCoding.code as published, e.g. likely benign
+    -- The matched classification_term (on classification_type and lower(classification_code));
+    -- NULL when unmapped, which is recorded in reference_issue.
+    term                    VARCHAR,
     submitted_classification VARCHAR, -- the submitter's own term, where it differs
     direction               VARCHAR NOT NULL,  -- supports, disputes, neutral
     strength                VARCHAR,           -- Definitive, Likely, Strong, Potential
