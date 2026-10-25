@@ -203,7 +203,7 @@ The bases are SQL CTEs that the compiler emits, not separate code paths. A list 
 - **Which pairs:** one SCV from each side, on the same variant, with the same conflict-detectable classification type (pathogenicity or oncogenicity).
 - **Options:**
   - `same_condition` (default true): the SCVs share a condition, where "not provided" and "not specified" match any condition (proposed; [features.md](features.md#open-questions), question 6);
-  - `flagged` (default `exclude`: flagged SCVs are left out of pairs; proposed, question 5);
+  - `flagged` (default `exclude`: flagged SCVs are left out of pairs, decided 25 October 2026; they still appear in every SCV list, grouped separately, and responses count how many were left out);
   - `distinct_submitters` (default true; false for a lab against itself).
 - **Each pair's conflict level** comes from one SQL function in the shared package, over the two terms' significance and codes ([data.md](data.md#conflicts)):
   - 5: P/LP against VUS or B/LB;
