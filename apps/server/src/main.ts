@@ -3,7 +3,7 @@
 
 import { ConfigError, loadConfig } from './config.ts';
 import { Database } from './data/database.ts';
-import { findReleases } from './data/releases.ts';
+import { findReleases, type SkippedRelease } from './data/releases.ts';
 import { createLogger } from './logging.ts';
 import { loadWebApp } from './pages/web-app.ts';
 import { buildServer } from './server.ts';
@@ -18,19 +18,30 @@ try {
 }
 
 const logger = createLogger(config);
-const releases = findReleases(config.dataDir);
+const { releases, skipped } = findReleases(config.dataDir);
+const skip = ({ dir, reason }: SkippedRelease) => {
+  logger.warn({ dir, reason }, 'skipped a derived release that is incomplete or invalid');
+};
+skipped.forEach(skip);
 const db = await Database.open(
   { ...config.duckdb, dataDir: config.dataDir, pinnedRelease: config.pinnedRelease },
   releases,
+  skip,
 );
-const { current } = db.available();
+const { current, releases: served } = db.available();
+if (config.pinnedRelease !== null && current !== config.pinnedRelease) {
+  logger.warn(
+    { pinned: config.pinnedRelease, serving: current },
+    'CLINVAR_RELEASE is not available; serving the newest release instead',
+  );
+}
 if (current === null) {
   logger.warn(
     { dataDir: config.dataDir },
     'no derived release found; run scripts/fetch-source.sh and scripts/derive.sh',
   );
 } else {
-  logger.info({ current, releases: releases.length, duckdb: config.duckdb }, 'releases loaded');
+  logger.info({ current, releases: served.length, duckdb: config.duckdb }, 'releases loaded');
 }
 
 const web = config.webDistDir === null ? null : loadWebApp(config.webDistDir);

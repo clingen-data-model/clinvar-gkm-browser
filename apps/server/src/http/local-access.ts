@@ -2,7 +2,9 @@
 // Two checks keep other sites out:
 //   - Host: only the names this server answers to, which blocks DNS rebinding (a site pointing
 //     its own domain at 127.0.0.1 to read the API).
-//   - Origin: requests that change state must come from this server's own pages.
+//   - Origin: requests that change state must come from this server's own pages: the same host
+//     and port as the request, so pages on other localhost ports (other dev servers, notebooks)
+//     are refused too.
 
 import type { FastifyInstance } from 'fastify';
 import { problem, sendProblem } from './errors.ts';
@@ -30,7 +32,8 @@ export function registerLocalAccess(app: FastifyInstance, allowedHosts: string[]
       const sameOrigin =
         origin === undefined
           ? request.headers['sec-fetch-site'] !== 'cross-site'
-          : allowed.has(hostName(URL.canParse(origin) ? new URL(origin).host : ''));
+          : URL.canParse(origin) &&
+            new URL(origin).host === (request.headers.host ?? '').trim().toLowerCase();
       if (!sameOrigin) {
         void sendProblem(
           reply,

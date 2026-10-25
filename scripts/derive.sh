@@ -12,11 +12,33 @@ DATA_DIR="${CLINVAR_DATA_DIR:-./data}"
 SCHEMA_VERSION=1
 SQL_DIR="$(cd "$(dirname "$0")/../packages/derive/sql" && pwd)"
 
-release="${1:-$(ls "$DATA_DIR/source" | sort | tail -1)}"
+release="${1:-$(ls "$DATA_DIR/source" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort | tail -1)}"
 src="$(cd "$DATA_DIR/source/$release" && pwd)"
 dest_dir="$DATA_DIR/derived/$SCHEMA_VERSION/$release"
 tmp_dir="$DATA_DIR/tmp/derive-$release"
 out_dir="$tmp_dir/out"
+
+# A complete download has its manifest (fetch-source.sh writes it last); check the files against
+# it, so a derived release is built from exactly one verified build.
+if [[ ! -f "$src/manifest.json" ]]; then
+  echo "$src has no manifest.json: the download is incomplete; run scripts/fetch-source.sh" >&2
+  exit 1
+fi
+echo "verifying $src against its manifest"
+jq -r '.files[] | "\(.sha256)  \(.name)"' "$src/manifest.json" | (cd "$src" && shasum -a 256 -c --quiet -)
+if [[ -n "$(comm -13 <(jq -r '.files[].name' "$src/manifest.json" | sort) <(cd "$src" && ls *.parquet | sort))" ]]; then
+  echo "$src has parquet files its manifest doesn't list" >&2
+  exit 1
+fi
+
+# One derivation per release at a time; the lock goes, with the scratch files, when this exits.
+mkdir -p "$DATA_DIR/tmp"
+lock="$DATA_DIR/tmp/derive-$release.lock"
+if ! mkdir "$lock" 2>/dev/null; then
+  echo "another derivation of $release is running (or left $lock behind)" >&2
+  exit 1
+fi
+trap 'rm -rf "$tmp_dir" "$lock"' EXIT
 rm -rf "$tmp_dir"
 mkdir -p "$tmp_dir/spill" "$out_dir"
 
@@ -74,5 +96,5 @@ rm -rf "$dest_dir.old"
 if [[ -d "$dest_dir" ]]; then mv "$dest_dir" "$dest_dir.old"; fi
 mkdir -p "$(dirname "$dest_dir")"
 mv "$out_dir" "$dest_dir"
-rm -rf "$dest_dir.old" "$tmp_dir"
+rm -rf "$dest_dir.old"
 du -sh "$dest_dir"

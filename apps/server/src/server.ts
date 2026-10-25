@@ -37,8 +37,9 @@ export async function buildServer({ db, logger, allowedHosts, web = null }: Serv
   app.setValidatorCompiler(validatorCompiler);
   // Serializes the schema's parsed output, so keys a schema doesn't name never reach a response.
   app.setSerializerCompiler(serializerCompiler);
-  registerLocalAccess(app, allowedHosts);
+  // Headers first, so the access check's 403s carry them too.
   registerSecurityHeaders(app);
+  registerLocalAccess(app, allowedHosts);
   // An unknown page path gets the web app with a 404 status; anything else, a problem.
   registerErrorHandling(
     app,

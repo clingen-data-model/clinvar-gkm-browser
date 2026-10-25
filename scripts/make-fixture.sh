@@ -9,7 +9,7 @@ set -euo pipefail
 DATA_DIR="${CLINVAR_DATA_DIR:-./data}"
 SCHEMA_VERSION=1
 base="$DATA_DIR/derived/$SCHEMA_VERSION"
-release="${1:-$(ls "$base" | sort | tail -1)}"
+release="${1:-$(ls "$base" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort | tail -1)}"
 src="$(cd "$base/$release" && pwd)"
 out="apps/server/test/fixture/derived/$SCHEMA_VERSION/$release"
 rm -rf "$out"

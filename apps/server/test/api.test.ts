@@ -137,6 +137,20 @@ describe('local access', () => {
     const { status } = await get('/api/v1/releases', ProblemDetails, 'evil.example:8080');
     expect(status).toBe(403);
   });
+
+  it('refuses a change from a page on another port, with the usual headers', async () => {
+    const post = (origin: string) =>
+      server.app.inject({
+        method: 'POST',
+        url: '/api/v1/releases',
+        headers: { host: 'localhost:8080', origin },
+      });
+    const other = await post('http://localhost:5173');
+    expect(other.statusCode).toBe(403);
+    expect(other.headers['x-content-type-options']).toBe('nosniff');
+    // The same origin passes the check (and finds no such route).
+    expect((await post('http://localhost:8080')).statusCode).toBe(404);
+  });
 });
 
 const ScvPage = list(ScvRow);

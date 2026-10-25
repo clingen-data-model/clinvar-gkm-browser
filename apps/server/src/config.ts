@@ -44,8 +44,17 @@ export interface Config {
 
 export class ConfigError extends Error {}
 
+/** Memory available to this process: the container's limit when there is one, else the machine's. */
+function availableMemory(): number {
+  const constrained = process.constrainedMemory();
+  return constrained > 0 && constrained < totalmem() ? constrained : totalmem();
+}
+
 export function loadConfig(env: Record<string, string | undefined>): Config {
-  const parsed = Env.safeParse(env);
+  // An empty variable (common in env files) means unset, not an invalid value.
+  const parsed = Env.safeParse(
+    Object.fromEntries(Object.entries(env).filter(([, value]) => value !== '')),
+  );
   if (!parsed.success) {
     throw new ConfigError(`Invalid configuration:\n${z.prettifyError(parsed.error)}`);
   }
@@ -62,7 +71,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     webDistDir: e.WEB_DIST_DIR ?? null,
     duckdb: {
       // Half the machine (or container) by default, leaving room for Node and the OS.
-      memoryLimit: e.DUCKDB_MEMORY_LIMIT ?? `${Math.max(1, Math.floor(totalmem() / 2 ** 31))}GB`,
+      memoryLimit:
+        e.DUCKDB_MEMORY_LIMIT ?? `${Math.max(1, Math.floor(availableMemory() / 2 ** 31))}GB`,
       threads: e.DUCKDB_THREADS ?? availableParallelism(),
       queryTimeoutMs: e.QUERY_TIMEOUT_MS,
     },

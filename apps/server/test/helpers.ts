@@ -21,7 +21,7 @@ export async function fixtureServer() {
       queryTimeoutMs: 10_000,
       pinnedRelease: null,
     },
-    findReleases(FIXTURE_DIR),
+    findReleases(FIXTURE_DIR).releases,
   );
   const app = await buildServer({
     db,
