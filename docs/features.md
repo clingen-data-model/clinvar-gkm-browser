@@ -71,24 +71,60 @@ Needed before anything else is useful. **Status, 25 October 2026:** done except 
 | 1.2 | **Search box:** accessions, variation IDs, rsIDs, gene symbols, condition and submitter names (prefix), exact HGVS. Direct lookups, without the deferred term table ([search.md](search.md)) | `/search` |
 | 1.3 | **SCV page** (one submission, all fields) and **SQL console**, first version | none |
 
-### Phase 2: ClinVar Miner's browse views
+### What curators did with ClinVar Miner
 
-| # | Item | ClinVar Miner equivalent |
+From running the current fork on real data ([research/clinvar-miner-running.md](research/clinvar-miner-running.md), screenshots in [research/clinvar-miner-shots/](research/clinvar-miner-shots/)) and ClinGen's training video ([research/clinvar-miner-video.md](research/clinvar-miner-video.md): Steven Harrison, SVI co-chair, February 2019). The workflows, roughly by how much the video dwells on them:
+
+1. **Review one lab's classifications against everyone else's.** The lab's conflict scorecard; its term × term grid against all others; a table ranking every other lab by disagreement at each level; one click to head-to-head with one lab, another to the variants in a grid cell.
+2. **Compare against expert panels.** The same with the other side limited to expert panels and practice guidelines (Labcorp vs the ClinGen PAH panel: 173 variants), or an expert panel against starred labs to find outdated calls.
+3. **Audit a lab against itself:** conflicts between one lab's own SCVs, some intentional (different conditions).
+4. **Survey a gene:** classification mix; who submits (to recruit labs for an expert panel, reading each lab's classification mix to tell diagnostic labs from VUS-only ones); its conflicts as a term × term grid with clickable cells.
+5. **Narrow to a work list:** stack filters (one star or more, clinical testing on both sides, clinically significant conflicts only; RYR1 went from 2,106 variants to 27), then download it to annotate outside the tool.
+6. **Prefer gene over condition,** because one disease is scattered over many condition names ("not provided", "PAH-related disorder", ...); MONDO roll-ups help where conditions are used.
+7. **Compare genes by rates,** e.g. the share of multi-submitter variants in conflict ("BRCA1 only 3% … BTD 42%"). ClinVar Miner didn't compute these; Harrison worked them out by hand for his slides.
+
+### Where we differ from ClinVar Miner
+
+Observed in the running fork:
+- **Germline and somatic are mixed:** somatic "Tier I" against germline "Pathogenic" counted as a synonymous conflict (KRAS G12D, 256 pairs). Here, conflicts are only within one conflict-detectable classification type ([data.md](data.md#conflicts)).
+- **Flagged submissions count toward conflicts;** ClinVar excludes them. Here, excluded by default (open question 5).
+- **"not provided" and "not specified" match no other condition** (both map to the MONDO root), so with same-condition matching, the default, they're never compared: HFE H63D's 19 such SCVs sit apart from its 38 under hemochromatosis (open question 6).
+- **Conflict lists show only HGVS, dbSNP and gnomAD frequency;** you can't see who said what without opening each variant. Here, a conflict list shows the two (or more) SCVs side by side.
+- **Large CNVs become gene-combination rows,** making the gene index 245,810 px tall. Here, gene relationships are chosen explicitly (done, 25 October 2026).
+- **Exact-string condition matching,** **no aggregate classification,** **no pagination,** **no API,** **export of the rendered table only,** and **history dropped for size.**
+
+### Layout
+
+Organized around entity pages:
+
+- **Entity pages with tabs.** Variant, gene, condition, submitter (and SCV): an overview tab, then Submissions, Conflicts, and later History. Every tab is a set of explorer queries with the entity fixed, so filters work the same everywhere.
+- **The explorer** for anything else: the full filter bar over SCVs, variants or SCV pairs, with a table, a summary and export. Index pages and common curator workflows are **presets**: named, linkable filter sets ("this lab vs expert panels", "clinically significant conflicts, clinical testing, one star or more").
+- **Both sides of a comparison are filtered separately,** labelled by what they are ("submissions from Labcorp", "other submissions"), as ClinVar Miner's controls were.
+- **Counts come with rates:** every count of variants or conflicts can show its share (of the gene's variants, of its multi-submitter variants), so comparisons across genes or labs need no arithmetic.
+- **Explanations next to the numbers:** what each conflict level means, with examples; why rows of a breakdown don't add up to the total (a variant counts under each term it has).
+
+### Phase 2: conflicts, then browse
+
+Conflict comparison by lab was ClinVar Miner's most used feature, so it comes first.
+
+| # | Item | Workflow | ClinVar Miner equivalent |
+| --- | --- | --- | --- |
+| 2.1 | **`/scv-pairs` and `/scv-pairs/summary`** in the API: pairs of SCVs on one variant and conflict-detectable type, with conflict level, same-condition matching, separate `a.`/`b.` filters, and dimensions over both sides ([api.md](api.md#scv-pairs-and-conflicts)) | all conflict views | the `comparisons` table |
+| 2.2 | **Submitter page, Conflicts tab:** scorecard by level (counts and shares), term × term grid against all others, and the table of other labs ranked by disagreement. Side filters (stars, method), minimum level, same-condition toggle | 1, 2, 3 | `/variants-in-conflict-by-submitter/<id>` |
+| 2.3 | **Head-to-head:** two submitters, their grid, and the variants they disagree on with **both labs' SCVs side by side** (classification, date, condition, comment) | 1, 2 | `/variants-in-conflict-by-submitter/<id1>/<id2>[/<s1>/<s2>]` |
+| 2.4 | **Gene and condition pages, Conflicts tab:** conflict overview by level, grid, conflicting variants with their SCVs | 4 | `/variants-in-conflict-by-gene/<gene>`, `-by-condition/<c>` |
+| 2.5 | **The explorer,** with presets for the workflows above and for ClinVar Miner's views | 5 | the drill-down lists, everywhere; plus SCV-level faceting |
+| 2.6 | **Gene, condition and submitter overview tabs:** crosstabs (submitter × classification, condition × classification, gene × classification) with shares, and drill-down | 4 | `/variants-by-gene/<gene>` and the like |
+| 2.7 | **Index pages:** genes, conditions, submitters, terms, with counts, shares and conflict rates, sortable, searchable | 4, 7 | `/variants-by-gene` and the like |
+| 2.8 | **Comparison across entities:** rates for several genes or labs side by side | 7 | none; done by hand |
+| 2.9 | **Per-table search** and **downloads** of any table | 5 | "Search this table", "Download table as spreadsheet" |
+
+### Phase 3: conditions
+
+| # | Item | Notes |
 | --- | --- | --- |
-| 2.1 | **The explorer:** filter bar for every [API filter](api.md#filters), sortable paged table, summary panel (counts by bucket), drill-down from any count to its rows, shareable URL. Over SCVs and variants | the drill-down variant lists, everywhere; plus SCV-level faceting, which neither ClinVar Miner nor NCBI has |
-| 2.2 | **Gene, condition and submitter pages:** header plus crosstabs (condition × classification and submitter × classification on a gene page, and so on) and explorer drill-downs | `/variants-by-gene/<gene>`, `-by-condition/<c>`, `-by-submitter/<s>` and their sub-pages |
-| 2.3 | **Index pages:** all genes, conditions, submitters and classification terms, with counts, sortable, multi-select into the explorer | `/variants-by-gene`, `-by-condition`, `-by-submitter`, `-by-significance` |
-| 2.4 | **Classification term pages** | `/variants-by-significance/<sig>` |
-
-### Phase 3: conflicts
-
-| # | Item | ClinVar Miner equivalent |
-| --- | --- | --- |
-| 3.1 | **Conflict overview:** variants by maximum conflict level, with the same-condition and minimum-stars options | the overview row on every conflict page |
-| 3.2 | **Term × term matrix,** global and per gene, condition or submitter, cells drilling down to the variant pairs | `/variants-in-conflict-by-significance[/<s1>/<s2>]` |
-| 3.3 | **Conflicts by gene and by condition** | `/variants-in-conflict-by-gene`, `-by-condition` |
-| 3.4 | **One submitter vs all others:** a scorecard, and a table of every other lab with conflict counts against this one | `/variants-in-conflict-by-submitter/<id>` |
-| 3.5 | **Submitter vs submitter:** head-to-head matrix and the variants they disagree on | `/variants-in-conflict-by-submitter/<id1>/<id2>[/<s1>/<s2>]` |
+| 3.1 | **MONDO roll-up:** conditions under a MONDO term, ancestors included, with counts | Needs the MONDO ontology (an outside source; see [Left out](#left-out-or-needing-outside-data)) |
+| 3.2 | **Condition-to-condition table:** how one disease is split across condition names | From `scv_condition` and MONDO |
 
 ### Phase 4: take data out, bring data in
 
@@ -141,3 +177,6 @@ Candidates for M5–M6 and for showing to NCBI. Ordered by our current guess at 
 2. Should the default classification scale normalize ClinVar's free-text and legacy terms (as ClinVar Miner did), and how should VUS sub-tiers display?
 3. Where does the six-level conflict scale differ from NCBI's own conflict call, and do we show both?
 4. Is VCEP concordance (trial feature 2) possible from ClinVar-GKM alone? Expert panel SCVs are identifiable by review status, but the ClinGen Evidence Repository has more detail.
+5. **Flagged submissions in conflicts.** ClinVar excludes them from its aggregate; ClinVar Miner counted them (59 flagged SCVs in 911 clinically significant pairs in the sample). Proposed: excluded by default, with a toggle.
+6. **"not provided" and "not specified" with same-condition matching.** ClinVar Miner never compares them with named conditions, undercounting conflicts. Options: compare them with every condition (a wildcard), or make cross-condition comparison the default, as ClinVar's own aggregate does. Proposed: wildcard, so same-condition stays the default and these SCVs still count.
+
