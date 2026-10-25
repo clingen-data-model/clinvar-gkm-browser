@@ -107,3 +107,13 @@ test('a submitter compares with another lab head to head', async ({ page }) => {
   const results = await axe(page).analyze();
   expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 });
+
+test('numeric query values survive in the URL and the page', async ({ page }) => {
+  // The router decodes numeric-looking values to numbers; the app keeps them as text.
+  await page.goto('/genes/3077/conflicts?a.min_stars=2&b.min_stars=2');
+  await expect(page).toHaveURL(/b\.min_stars=2/);
+  await expect(page.getByRole('combobox', { name: 'Minimum stars' })).toHaveValue('2');
+  // A variation ID goes straight to its variant, rather than an empty search.
+  await page.goto('/search?q=17661');
+  await expect(page).toHaveURL(/\/variants\/17661$/);
+});

@@ -47,7 +47,7 @@ export function ConflictOptions({ search, sides }: Props) {
     });
   };
   const sideFilters = (label: string, stars: SideKey[], methods: SideKey[]) => (
-    <fieldset className="flex flex-wrap items-end gap-3">
+    <fieldset key={stars.join()} className="flex flex-wrap items-end gap-3">
       <legend className="mb-1 text-sm font-semibold">{label}</legend>
       <label className="flex flex-col text-xs text-muted-foreground">
         Minimum stars

@@ -1,14 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  createRouter,
-  parseSearchWith,
-  RouterProvider,
-  stringifySearchWith,
-} from '@tanstack/react-router';
+import { createRouter, RouterProvider, stringifySearchWith } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorPage } from './components/shell/ErrorPage.tsx';
-import { readableQuery } from './lib/url/params.ts';
+import { paramsOf, readableQuery } from './lib/url/params.ts';
 import { routeTree } from './routeTree.gen.ts';
 import './styles/app.css';
 
@@ -20,9 +15,10 @@ const router = createRouter({
   context: { queryClient },
   defaultPreload: 'intent',
   scrollRestoration: true,
-  // Query values stay plain strings, as the API takes them. The default JSON-parses them,
-  // which turns ?q=17661 into a number and quotes strings.
-  parseSearch: parseSearchWith((value) => value),
+  // Query values stay plain strings, as the API takes them and the routes' schemas expect. The
+  // router's own decoding turns numeric-looking values into numbers (?q=17661, ?b.min_stars=2)
+  // before any parser sees them, and a string schema then drops them.
+  parseSearch: paramsOf,
   stringifySearch: (search) => readableQuery(stringifyPlain(search)),
   // Route loaders fill the query cache; TanStack Query decides when data is stale.
   defaultPreloadStaleTime: 0,
