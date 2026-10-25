@@ -24,6 +24,30 @@ One image holds the server, the built web app and one derived release (`deploy/D
 3. **Push** to Artifact Registry in `clingen-dev` (repository, region and name to be decided).
 4. **Create the Cloud Run service** from the pushed image, with the settings below.
 
+### The dev service (clingen-dev, us-east1)
+
+Images: `us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:<release>-<commit>`. Pushing needs podman logged in: `gcloud auth print-access-token | podman login -u oauth2accesstoken --password-stdin us-east1-docker.pkg.dev`.
+
+```sh
+# Deploy (or update) the service, behind IAP: Google sign-in, no code in the app.
+gcloud run deploy clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
+  --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-58a1d23 \
+  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=3 --cpu-boost \
+  --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-522856288592.us-east1.run.app \
+  --no-allow-unauthenticated --iap
+
+# Once: let IAP call the service.
+gcloud run services add-iam-policy-binding clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
+  --member=serviceAccount:service-522856288592@gcp-sa-iap.iam.gserviceaccount.com --role=roles/run.invoker
+
+# Per person or group: who may sign in.
+gcloud iap web add-iam-policy-binding --project=clingen-dev --resource-type=cloud-run \
+  --service=clinvar-gkm-browser --region=us-east1 \
+  --member=user:someone@broadinstitute.org --role=roles/iap.httpsResourceAccessor
+```
+
+The URL is https://clinvar-gkm-browser-522856288592.us-east1.run.app. IAP's Google-managed sign-in admits accounts in the project's organization; collaborators with other accounts need a custom OAuth client configured in IAP (still no app code). Setup reference: [Configure IAP for Cloud Run](https://docs.cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run).
+
 ### Cloud Run settings
 
 | Setting | Value | Why |
