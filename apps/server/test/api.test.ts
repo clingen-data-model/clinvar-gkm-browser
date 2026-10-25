@@ -9,7 +9,9 @@ import {
   VariantDetail,
   item,
   list,
+  SearchResponse,
   SummaryResponse,
+  Vocabularies,
 } from '@cvb/shared/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -175,5 +177,30 @@ describe('lists and summaries', () => {
     expect(bad.body.errors?.[0]?.path).toBe('querystring/bogus');
     const sort = await get('/api/v1/scvs?sort=name', ProblemDetails);
     expect(sort.body.errors?.[0]?.path).toBe('querystring/sort');
+  });
+});
+
+describe('search and vocabularies', () => {
+  it.each([
+    ['VCV000000010', 'variant', 10],
+    ['10', 'variant', 10],
+    ['NM_000410.4:c.187C>G', 'variant', 10],
+    ['HFE', 'gene', 3077],
+  ])('finds %s', async (q, kind, id) => {
+    const { status, body } = await get(`/api/v1/search?q=${encodeURIComponent(q)}`, SearchResponse);
+    expect(status).toBe(200);
+    expect(body.results[0]).toMatchObject({ kind, id });
+  });
+
+  it('returns code lists and the query registry', async () => {
+    const { body } = await get('/api/v1/vocabularies', item(Vocabularies));
+    expect(
+      body.data.terms.find((t) => t.classificationType === 'PATH' && t.term === 'vus-h'),
+    ).toMatchObject({
+      significance: 1,
+      bucket: 'V',
+    });
+    expect(body.data.filters.map((f) => f.name)).toContain('gene');
+    expect(body.data.dimensions.map((d) => d.name)).toContain('submitter');
   });
 });

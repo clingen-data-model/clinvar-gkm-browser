@@ -13,7 +13,10 @@ import {
   VariantDetail,
   item,
   list,
+  SearchQuery,
+  SearchResponse,
   SummaryResponse,
+  Vocabularies,
 } from '@cvb/shared/api';
 import { documentedQuery, parseQuery, type RawQuery } from '@cvb/shared/query';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
@@ -22,7 +25,9 @@ import type { Database } from '../data/database.ts';
 import { problem, sendProblem } from '../http/errors.ts';
 import { conditionDetail, geneDetail, submitterDetail } from './entities/queries.ts';
 import { listScvs, scvDetail, scvOrder, summarizeScvs, variantScvs } from './scvs/queries.ts';
+import { search } from './search/queries.ts';
 import { variantDetail } from './variants/queries.ts';
+import { vocabularies } from './vocabulary/queries.ts';
 
 const IdParams = z.object({ id: IntId });
 
@@ -36,6 +41,41 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
     const { current, releases } = db.available();
     return { current, data: releases.map((r) => r.release) };
   });
+
+  app.get(
+    '/vocabularies',
+    {
+      schema: {
+        tags: ['vocabularies'],
+        description:
+          'Code lists (classification types and terms, review statuses, submission levels) and the filters and dimensions lists and summaries accept.',
+        querystring: ReleaseQuery,
+        response: { 200: item(Vocabularies) },
+      },
+    },
+    async (request) => {
+      const release = db.resolve(request.query.release);
+      return { release, data: await vocabularies(db, release) };
+    },
+  );
+
+  app.get(
+    '/search',
+    {
+      schema: {
+        tags: ['search'],
+        description:
+          'Find variants, SCVs, genes, conditions and submitters by identifier, HGVS or name.',
+        querystring: SearchQuery,
+        response: { 200: SearchResponse },
+      },
+    },
+    async (request) => {
+      const release = db.resolve(request.query.release);
+      const found = await search(db, release, request.query.q, request.query.limit);
+      return { release, q: request.query.q, ...found };
+    },
+  );
 
   const itemSchema = (tag: string, data: z.ZodType) => ({
     tags: [tag],

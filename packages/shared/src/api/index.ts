@@ -3,3 +3,5 @@ export * from './entities.ts';
 export * from './lists.ts';
 export * from './problem.ts';
 export * from './release.ts';
+export * from './search.ts';
+export * from './vocabulary.ts';
