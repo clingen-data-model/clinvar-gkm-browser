@@ -22,6 +22,17 @@ export const Vocabularies = z.object({
   reviewStatuses: z.array(z.object({ status: z.string(), stars: z.int(), current: z.boolean() })),
   submissionLevels: z.array(z.object({ code: z.string(), label: z.string(), rank: z.int() })),
   filters: z.array(z.object({ name: z.string(), label: z.string(), description: z.string() })),
-  dimensions: z.array(z.object({ name: z.string(), label: z.string() })),
+  /** Dimensions each resource's summaries group by. */
+  dimensions: z.object({
+    scvs: z.array(z.object({ name: z.string(), label: z.string() })),
+    pairs: z.array(z.object({ name: z.string(), label: z.string() })),
+    variants: z.array(z.object({ name: z.string(), label: z.string() })),
+  }),
+  conflictLevels: z.array(z.object({ level: z.int(), label: z.string(), example: z.string() })),
+  conflictStatuses: z.array(z.object({ status: z.string(), label: z.string() })),
+  conditionMatches: z.array(z.object({ code: z.string(), label: z.string() })),
+  geneRelationships: z.array(z.object({ code: z.string(), label: z.string() })),
+  /** Condition IDs of "not provided" and "not specified". */
+  placeholderConditions: z.array(z.int()),
 });
 export type Vocabularies = z.infer<typeof Vocabularies>;

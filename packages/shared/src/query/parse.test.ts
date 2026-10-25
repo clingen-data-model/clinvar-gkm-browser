@@ -70,6 +70,7 @@ describe('compileSummaryRows', () => {
       parsed({ group_by: 'submitter,bucket', limit: '5' }),
     );
     expect(sql).toContain('top AS');
-    expect(params.slice(0, 2)).toEqual([5, 0]);
+    // The base's filter values first, then the page.
+    expect(params).toEqual(['PATH', 5, 0]);
   });
 });

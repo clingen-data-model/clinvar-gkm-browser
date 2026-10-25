@@ -227,6 +227,10 @@ describe('search and vocabularies', () => {
       bucket: 'V',
     });
     expect(body.data.filters.map((f) => f.name)).toContain('gene');
-    expect(body.data.dimensions.map((d) => d.name)).toContain('submitter');
+    expect(body.data.dimensions.scvs.map((d) => d.name)).toContain('submitter');
+    expect(body.data.dimensions.pairs.map((d) => d.name)).toEqual(
+      expect.arrayContaining(['a.submitter', 'b.term', 'conflict_level']),
+    );
+    expect(body.data.placeholderConditions.length).toBeGreaterThan(0);
   });
 });

@@ -1,10 +1,12 @@
 // The filter registry (docs/api.md#filters). One vocabulary for every list and summary: each
-// filter parses its URL values and compiles them to a predicate over `scv s`. Filters on the
-// variant (gene, variant type) are semi-joins on s.variation_id, so they work unchanged for the
-// SCV and variant resources. A filter is one entry here; routes don't change.
+// filter parses its URL values and compiles them to a predicate over a table of SCVs (`scv`, or
+// one side of a pair), named by the context's alias. Filters on the variant (gene, variant type)
+// are semi-joins on its variation_id, so they work unchanged for every resource. A filter is one
+// entry here; routes don't change.
 //
-// In URLs, a repeated parameter means OR, different parameters mean AND, and a `not.` prefix
-// negates the whole filter.
+// In URLs, a repeated parameter means OR, different parameters mean AND, a `not.` prefix negates
+// the whole filter, and on pair and variant resources an `a.` or `b.` prefix applies it to one
+// side of a comparison (`not.a.submitter`).
 
 import { z } from 'zod';
 import type { SqlParams } from './sql.ts';
@@ -63,11 +65,17 @@ export const RELATIONSHIP_CODE_SQL = `CASE relationship_type
 export interface FilterContext {
   params: SqlParams;
   options: FilterOptions;
+  /** The alias of the SCV table the predicate reads. */
+  t: string;
 }
+
+/** Which SCVs a filter applies to: all of them, or one side of a comparison. */
+export type Side = 'both' | 'a' | 'b';
 
 /** A filter with its values parsed: the canonical values for echoing, and its SQL. */
 export interface AppliedFilter {
   name: string;
+  side: Side;
   negate: boolean;
   values: string[];
   predicate: (ctx: FilterContext) => string;
@@ -78,7 +86,11 @@ export interface Filter {
   label: string;
   description: string;
   /** Parses a filter's raw URL values, or returns the problem with the first bad one. */
-  parse: (raw: readonly string[], negate: boolean) => AppliedFilter | { error: string };
+  parse: (
+    raw: readonly string[],
+    negate: boolean,
+    side?: Side,
+  ) => AppliedFilter | { error: string };
 }
 
 interface FilterDef<T> {
@@ -96,7 +108,7 @@ function filter<T>(def: FilterDef<T>): Filter {
     name: def.name,
     label: def.label,
     description: def.description,
-    parse(raw, negate) {
+    parse(raw, negate, side = 'both') {
       if (def.single === true && raw.length > 1) return { error: `${def.name} takes one value.` };
       const values: T[] = [];
       for (const r of raw) {
@@ -106,6 +118,7 @@ function filter<T>(def: FilterDef<T>): Filter {
       }
       return {
         name: def.name,
+        side,
         negate,
         values: values.map((v) => String(v)),
         predicate: (ctx) => {
@@ -128,19 +141,19 @@ export const FILTERS: readonly Filter[] = [
     label: 'Variant',
     description: 'ClinVar variation ID.',
     value: id,
-    sql: (v, { params }) => `s.variation_id IN (${params.list(v)})`,
+    sql: (v, { params, t }) => `${t}.variation_id IN (${params.list(v)})`,
   }),
   filter({
     name: 'gene',
     label: 'Gene',
     description: "NCBI gene ID, through the variant's gene list (see gene_relationship).",
     value: id,
-    sql: (v, { params, options }) => {
+    sql: (v, { params, options, t }) => {
       const genes = params.list(v);
       const types = clinvarRelationshipTypes(options.geneRelationships);
       const relationship =
         types === null ? '' : ` AND relationship_type IN (${params.list(types)})`;
-      return `s.variation_id IN (SELECT variation_id FROM variant_gene WHERE gene_id IN (${genes})${relationship})`;
+      return `${t}.variation_id IN (SELECT variation_id FROM variant_gene WHERE gene_id IN (${genes})${relationship})`;
     },
   }),
   filter({
@@ -148,15 +161,15 @@ export const FILTERS: readonly Filter[] = [
     label: 'Variant type',
     description: "ClinVar's variation type, e.g. 'single nucleotide variant', 'Deletion'.",
     value: text,
-    sql: (v, { params }) =>
-      `s.variation_id IN (SELECT variation_id FROM variant WHERE clinvar_variation_type IN (${params.list(v)}))`,
+    sql: (v, { params, t }) =>
+      `${t}.variation_id IN (SELECT variation_id FROM variant WHERE clinvar_variation_type IN (${params.list(v)}))`,
   }),
   filter({
     name: 'submitter',
     label: 'Submitter',
     description: 'ClinVar submitter (organization) ID.',
     value: id,
-    sql: (v, { params }) => `s.submitter_id IN (${params.list(v)})`,
+    sql: (v, { params, t }) => `${t}.submitter_id IN (${params.list(v)})`,
   }),
   filter({
     name: 'classification_type',
@@ -166,23 +179,23 @@ export const FILTERS: readonly Filter[] = [
       .string()
       .regex(/^[A-Za-z]+$/)
       .transform((v) => v.toUpperCase()),
-    sql: (v, { params }) =>
-      v.includes('ANY') ? 'true' : `s.classification_type IN (${params.list(v)})`,
+    sql: (v, { params, t }) =>
+      v.includes('ANY') ? 'true' : `${t}.classification_type IN (${params.list(v)})`,
   }),
   filter({
     name: 'term',
     label: 'Classification',
     description: 'Normalized term code, e.g. p, lp, vus, lb, b (see /api/v1/vocabularies/terms).',
     value: z.string().regex(/^[a-z0-9/-]+$/),
-    sql: (v, { params }) => `s.term IN (${params.list(v)})`,
+    sql: (v, { params, t }) => `${t}.term IN (${params.list(v)})`,
   }),
   filter({
     name: 'bucket',
     label: 'Significance',
     description: 'P (P/LP), V (uncertain), B (B/LB), O (other), N (not provided).',
     value: z.enum(['P', 'V', 'B', 'O', 'N']),
-    sql: (v, { params }) =>
-      `(s.classification_type, s.term) IN (SELECT classification_type, term FROM classification_term WHERE bucket IN (${params.list(v)}))`,
+    sql: (v, { params, t }) =>
+      `(${t}.classification_type, ${t}.term) IN (SELECT classification_type, term FROM classification_term WHERE bucket IN (${params.list(v)}))`,
   }),
   filter({
     name: 'min_stars',
@@ -190,45 +203,45 @@ export const FILTERS: readonly Filter[] = [
     description: 'Minimum review status stars, 0 to 4.',
     value: z.coerce.number().int().min(0).max(4),
     single: true,
-    sql: ([v], { params }) =>
-      `s.review_status IN (SELECT status FROM review_status WHERE stars >= ${params.add(v ?? 0)})`,
+    sql: ([v], { params, t }) =>
+      `${t}.review_status IN (SELECT status FROM review_status WHERE stars >= ${params.add(v ?? 0)})`,
   }),
   filter({
     name: 'stars',
     label: 'Stars',
     description: 'Review status stars, 0 to 4.',
     value: z.coerce.number().int().min(0).max(4),
-    sql: (v, { params }) =>
-      `s.review_status IN (SELECT status FROM review_status WHERE stars IN (${params.list(v)}))`,
+    sql: (v, { params, t }) =>
+      `${t}.review_status IN (SELECT status FROM review_status WHERE stars IN (${params.list(v)}))`,
   }),
   filter({
     name: 'review_status',
     label: 'Review status',
     description: "ClinVar's review status text.",
     value: text,
-    sql: (v, { params }) => `s.review_status IN (${params.list(v)})`,
+    sql: (v, { params, t }) => `${t}.review_status IN (${params.list(v)})`,
   }),
   filter({
     name: 'submission_level',
     label: 'Submission level',
     description: 'PG, EP, CP, NOCP, NOCL, FLAG.',
     value: z.enum(['PG', 'EP', 'CP', 'NOCP', 'NOCL', 'FLAG']),
-    sql: (v, { params }) => `s.submission_level IN (${params.list(v)})`,
+    sql: (v, { params, t }) => `${t}.submission_level IN (${params.list(v)})`,
   }),
   filter({
     name: 'method',
     label: 'Collection method',
     description: "ClinVar's collection method, e.g. 'clinical testing', 'research', 'curation'.",
     value: text,
-    sql: (v, { params }) => `list_has_any(s.collection_methods, [${params.list(v)}])`,
+    sql: (v, { params, t }) => `list_has_any(${t}.collection_methods, [${params.list(v)}])`,
   }),
   filter({
     name: 'condition',
     label: 'Condition',
     description: 'ClinVar condition (trait) ID; condition sets are expanded.',
     value: id,
-    sql: (v, { params }) =>
-      `s.scv_id IN (SELECT scv_id FROM scv_condition WHERE condition_id IN (${params.list(v)}))`,
+    sql: (v, { params, t }) =>
+      `${t}.scv_id IN (SELECT scv_id FROM scv_condition WHERE condition_id IN (${params.list(v)}))`,
   }),
   filter({
     name: 'evaluated_after',
@@ -236,7 +249,7 @@ export const FILTERS: readonly Filter[] = [
     description: 'Date last evaluated, on or after (YYYY-MM-DD).',
     value: date,
     single: true,
-    sql: ([v], { params }) => `s.date_last_evaluated >= ${params.add(v ?? null)}::DATE`,
+    sql: ([v], { params, t }) => `${t}.date_last_evaluated >= ${params.add(v ?? null)}::DATE`,
   }),
   filter({
     name: 'evaluated_before',
@@ -244,7 +257,7 @@ export const FILTERS: readonly Filter[] = [
     description: 'Date last evaluated, before (YYYY-MM-DD).',
     value: date,
     single: true,
-    sql: ([v], { params }) => `s.date_last_evaluated < ${params.add(v ?? null)}::DATE`,
+    sql: ([v], { params, t }) => `${t}.date_last_evaluated < ${params.add(v ?? null)}::DATE`,
   }),
   filter({
     name: 'submitted_after',
@@ -252,7 +265,7 @@ export const FILTERS: readonly Filter[] = [
     description: 'Date last submitted, on or after (YYYY-MM-DD).',
     value: date,
     single: true,
-    sql: ([v], { params }) => `s.date_submitted >= ${params.add(v ?? null)}::DATE`,
+    sql: ([v], { params, t }) => `${t}.date_submitted >= ${params.add(v ?? null)}::DATE`,
   }),
   filter({
     name: 'submitted_before',
@@ -260,7 +273,7 @@ export const FILTERS: readonly Filter[] = [
     description: 'Date last submitted, before (YYYY-MM-DD).',
     value: date,
     single: true,
-    sql: ([v], { params }) => `s.date_submitted < ${params.add(v ?? null)}::DATE`,
+    sql: ([v], { params, t }) => `${t}.date_submitted < ${params.add(v ?? null)}::DATE`,
   }),
   filter({
     name: 'has_comment',
@@ -268,15 +281,15 @@ export const FILTERS: readonly Filter[] = [
     description: 'Whether the submitter left a comment.',
     value: yesNo,
     single: true,
-    sql: ([v]) => (v === true ? 's.description IS NOT NULL' : 's.description IS NULL'),
+    sql: ([v], { t }) => (v === true ? `${t}.description IS NOT NULL` : `${t}.description IS NULL`),
   }),
   filter({
     name: 'comment',
     label: 'Comment contains',
     description: 'Text in the submitter comment, case-insensitive. Slow (about 1 s).',
     value: text,
-    sql: (v, { params }) =>
-      v.map((t) => `s.description ILIKE '%' || ${params.add(t)} || '%'`).join(' OR '),
+    sql: (v, { params, t }) =>
+      v.map((text) => `${t}.description ILIKE '%' || ${params.add(text)} || '%'`).join(' OR '),
   }),
 ];
 
