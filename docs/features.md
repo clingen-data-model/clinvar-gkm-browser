@@ -44,6 +44,8 @@ As of October 2026, from NCBI's documentation and the April 2026 relaunch:
 
 ## Build order
 
+**Decided 25 October 2026: support the workflows curators use.** What curators do with existing tools (see the inventory above, and how ClinGen taught one in [research/clinvar-miner-video.md](research/clinvar-miner-video.md)) must be achievable here in an intuitive way. The pages are organized so they extend as features are added. The variant, gene, condition, submitter and SCV pages are the frame; Those workflows become tabs, presets and explorer queries within it.
+
 Decided 25 October 2026: those workflows come first, built on the general API in [api.md](api.md) rather than as one-off pages. Every list in the app is the same **explorer**: a filter bar, a table, a summary panel and export, over SCVs, variants or SCV pairs. Every entity page is a header plus explorer views with filters preset. Each of those workflows, and most new features, is a preset, so the core is built once.
 
 Each phase is usable on its own. Effort is relative.
