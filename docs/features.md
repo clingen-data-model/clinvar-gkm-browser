@@ -50,7 +50,7 @@ Each phase is usable on its own. Effort is relative.
 
 ### Phase 0: foundation
 
-Needed before anything else is useful.
+Needed before anything else is useful. **Status, 25 October 2026:** done except 0.3 (data is still loaded with the scripts).
 
 | # | Item | Notes |
 | --- | --- | --- |
@@ -60,6 +60,8 @@ Needed before anything else is useful.
 | 0.4 | **Web shell** | gencc template: frame, navigation, theme, release stamp, URL-as-state helpers |
 
 ### Phase 1: look things up
+
+**Status, 25 October 2026:** 1.1 and 1.2 done (variant page, search box and results); the SCV page is done, the SQL console isn't. Gene, submitter and condition pages exist in a first form (counts and a paged SCV list) ahead of phase 2.
 
 | # | Item | ClinVar Miner equivalent |
 | --- | --- | --- |

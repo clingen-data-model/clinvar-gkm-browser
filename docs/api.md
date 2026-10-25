@@ -1,6 +1,6 @@
 # ClinVar GKM browser: API
 
-Status: draft, 25 October 2026. The REST API the web app uses and other programs can use: the resources, the shared filter language, summaries (crosstabs), conflict pairs, paging, formats and errors, and how the server turns a request into SQL. Endpoint names and parameters are a first design; the principles are what to hold on to. The tables behind it are in [schema.md](schema.md). The features built on it, and their order, are in [features.md](features.md#build-order).
+Status: draft, 25 October 2026. **Built so far:** releases, entity items (variants, SCVs, genes, submitters, conditions), `/variants/{id}/scvs`, `/scvs` and `/scvs/summary` over the shared filter and dimension registries (`packages/shared/src/query`), `/search`, and `/vocabularies`. Not yet: `/variants` lists and summaries, `/scv-pairs`, export formats, `POST /query`, local-only endpoints. The REST API the web app uses and other programs can use: the resources, the shared filter language, summaries (crosstabs), conflict pairs, paging, formats and errors, and how the server turns a request into SQL. Endpoint names and parameters are a first design; the principles are what to hold on to. The tables behind it are in [schema.md](schema.md). The features built on it, and their order, are in [features.md](features.md#build-order).
 
 ## Principles
 
@@ -52,7 +52,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 | `region` | SCVs, variants | `chr17:43044295-43125483` (GRCh38) |
 | `submitter` | SCVs | submitter ID |
 | `classification_type` | SCVs, variants | `PATH` (default), `ONCO`, `SCI`, `DR`, … or `any` |
-| `classification` | SCVs | normalized term code (`pathogenic`, `likely_benign`, `uncertain_significance`, …) |
+| `term` | SCVs | normalized term code from the vocabulary (`p`, `lp`, `vus`, `vus-h`, `lb`, `b`, …) |
 | `bucket` | SCVs | `P` (P/LP), `V` (VUS), `B` (B/LB), `O` (other), `N` (not provided) |
 | `stars`, `min_stars` | SCVs | review stars, 0–4 |
 | `review_status`, `submission_level` | SCVs | vocabulary codes |
@@ -65,7 +65,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 
 - **Variant filters on SCV queries** (`gene`, `variant_type`, `region`) select SCVs whose variant matches.
 - **SCV filters on variant queries** select variants that have at least one SCV matching all of them together.
-- **Classification terms are normalized.** ClinVar's submitted terms vary in case and wording (`Pathogenic`, `pathogenic`, `Pathogenic, low penetrance`, `Uncertain significance`, the VUS sub-tiers). A derived vocabulary table maps each submitted term to a normalized code, a bucket and a rank. Filters and groupings use the codes, and responses carry both the code and ClinVar's original text. This table doesn't exist yet; it comes first in the build order.
+- **Classification terms are normalized.** ClinVar's submitted terms vary in case and wording (`Pathogenic`, `PATHOGENIC`, `Pathogenic, low penetrance`, the VUS sub-tiers). The `classification_term` vocabulary (from clinvar-ingest-bq-tools; [data.md](data.md#conflicts)) maps each to a term code, a significance and a bucket. Filters and groupings use the codes, and responses carry both the code and ClinVar's original text.
 
 ## Summaries
 
@@ -73,7 +73,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 - `group_by`: one or two dimensions;
 - `measure`: what to count (`scvs`, `variants`, `submitters`, `genes`, `conditions`), several allowed.
 
-Dimensions: `gene`, `condition`, `submitter`, `classification`, `bucket`, `classification_type`, `stars`, `review_status`, `submission_level`, `method`, `variant_type`, `consequence`, `year_evaluated`, `year_submitted`. Pairs add `a.*` and `b.*` versions and `conflict_level`.
+Dimensions: `gene`, `condition`, `submitter`, `term` (keyed `PATH:p`), `bucket`, `classification_type`, `stars`, `review_status`, `submission_level`, `method`, `variant_type`, `year_evaluated`, `year_submitted`. Pairs will add `a.*` and `b.*` versions and `conflict_level`.
 
 ```
 GET /api/v1/scvs/summary?gene=672&group_by=submitter,bucket&measure=scvs
