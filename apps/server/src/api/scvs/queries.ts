@@ -1,7 +1,16 @@
 // SCV reads. Column aliases are the response's field names, so rows parse straight into the
 // shared schemas.
 
-import { ScvDetail, ScvRow } from '@cvb/shared/api';
+import { ScvDetail, ScvRow, type SummaryResponse } from '@cvb/shared/api';
+import {
+  BUCKET_LABELS,
+  compileLabels,
+  compileSummaryRows,
+  compileSummaryTotals,
+  SqlParams,
+  whereSql,
+  type ParsedQuery,
+} from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
 
@@ -108,4 +117,111 @@ export async function scvDetail(
   ]);
   const row = rows[0];
   return row === undefined ? null : ScvDetail.parse({ ...row, submittedConditions, citations });
+}
+
+/** Sort keys an SCV list accepts, and their columns. Every sort ends with the key, for stable pages. */
+const SCV_SORTS: Record<string, string> = {
+  variant: 's.variation_id',
+  scv: 's.scv_id',
+  submitter: 's.submitter_id',
+  evaluated: 's.date_last_evaluated',
+  submitted: 's.date_submitted',
+};
+
+export function scvOrder(sort: string[]): { sql: string; unknown: string[] } {
+  const parts: string[] = [];
+  const unknown: string[] = [];
+  for (const key of sort) {
+    const desc = key.startsWith('-');
+    const column = SCV_SORTS[desc ? key.slice(1) : key];
+    if (column === undefined) unknown.push(key);
+    else parts.push(`${column} ${desc ? 'DESC NULLS LAST' : 'ASC NULLS LAST'}`);
+  }
+  parts.push('s.variation_id', 's.scv_id');
+  return { sql: parts.join(', '), unknown };
+}
+
+/** A page of SCVs matching a query: the page's keys first, then their rows. */
+export async function listScvs(
+  db: Database,
+  release: string,
+  query: ParsedQuery,
+  order: string,
+): Promise<{ rows: ScvRow[]; total: number | null }> {
+  const params = new SqlParams();
+  const where = whereSql(query, params);
+  const limit = params.add(query.limit);
+  const offset = params.add(query.offset);
+  const page = db.query(
+    release,
+    `WITH page AS (
+       SELECT s.scv_id, s.variation_id FROM scv s WHERE ${where}
+       ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}
+     )
+     SELECT ${SCV_ROW_COLUMNS}
+     FROM page p JOIN scv s ON s.variation_id = p.variation_id AND s.scv_id = p.scv_id
+     ${SCV_ROW_JOINS}
+     ORDER BY ${order}`,
+    params.values,
+  );
+  let total: Promise<number | null> = Promise.resolve(null);
+  if (query.count) {
+    const countParams = new SqlParams();
+    total = db
+      .query(
+        release,
+        `SELECT count(*)::INTEGER AS n FROM scv s WHERE ${whereSql(query, countParams)}`,
+        countParams.values,
+      )
+      .then((rows) => z.object({ n: z.int() }).parse(rows[0]).n);
+  }
+  const [rows, n] = await Promise.all([page, total]);
+  return { rows: z.array(ScvRow).parse(rows), total: n };
+}
+
+const Key = z.string().nullable();
+
+/** Counts of matching SCVs, grouped by up to two dimensions, with labels for their keys. */
+export async function summarizeScvs(
+  db: Database,
+  release: string,
+  query: ParsedQuery,
+): Promise<Omit<SummaryResponse, 'release' | 'query'>> {
+  const totalsSql = compileSummaryTotals(query);
+  const totalsRow = z
+    .record(z.string(), z.number().nullable())
+    .parse((await db.query(release, totalsSql.sql, totalsSql.params))[0]);
+  const { first_values: firstValues, ...totals } = totalsRow;
+  const cleanTotals = Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, v ?? 0]));
+  const page = { limit: query.limit, offset: query.offset, total: firstValues ?? null };
+  if (query.groupBy.length === 0) {
+    return { dimensions: [], rows: [], totals: cleanTotals, page };
+  }
+
+  const rowsSql = compileSummaryRows(query);
+  const raw = await db.query(release, rowsSql.sql, rowsSql.params);
+  const rows = raw.map((r) => {
+    const out: Record<string, string | number | null> = {};
+    query.groupBy.forEach((d, i) => {
+      out[d.name] = Key.parse(r[`d${String(i)}`]);
+    });
+    for (const m of query.measures) out[m] = z.int().parse(r[m]);
+    return out;
+  });
+
+  const dimensions = await Promise.all(
+    query.groupBy.map(async (d) => {
+      const keys = [...new Set(rows.map((r) => r[d.name]).filter((k) => typeof k === 'string'))];
+      const labels: Record<string, string> = { ...(d.name === 'bucket' ? BUCKET_LABELS : {}) };
+      const labelSql = compileLabels(d, keys);
+      if (labelSql !== null) {
+        const found = await db.query(release, labelSql.sql, labelSql.params);
+        for (const row of z.array(z.object({ key: z.string(), label: z.string() })).parse(found)) {
+          labels[row.key] = row.label;
+        }
+      }
+      return { name: d.name, label: d.label, labels };
+    }),
+  );
+  return { dimensions, rows, totals: cleanTotals, page };
 }

@@ -12,16 +12,24 @@ import {
   SubmitterDetail,
   VariantDetail,
   item,
+  list,
+  SummaryResponse,
 } from '@cvb/shared/api';
+import { documentedQuery, parseQuery, type RawQuery } from '@cvb/shared/query';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Database } from '../data/database.ts';
 import { problem, sendProblem } from '../http/errors.ts';
 import { conditionDetail, geneDetail, submitterDetail } from './entities/queries.ts';
-import { scvDetail, variantScvs } from './scvs/queries.ts';
+import { listScvs, scvDetail, scvOrder, summarizeScvs, variantScvs } from './scvs/queries.ts';
 import { variantDetail } from './variants/queries.ts';
 
 const IdParams = z.object({ id: IntId });
+
+/** Fastify's parsed query string, as parseQuery takes it. */
+function raw(query: Record<string, unknown>): RawQuery {
+  return z.record(z.string(), z.union([z.string(), z.array(z.string())])).parse(query);
+}
 
 export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) => {
   app.get('/releases', { schema: { tags: ['releases'], response: { 200: ReleaseList } } }, () => {
@@ -100,4 +108,60 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
       return { release, data: await variantScvs(db, release, request.params.id) };
     },
   );
+
+  app.get(
+    '/scvs',
+    {
+      schema: {
+        tags: ['scvs'],
+        description: 'SCVs matching the filters, a page at a time.',
+        querystring: documentedQuery('list'),
+        response: { 200: list(ScvRow) },
+      },
+    },
+    async (request, reply) => {
+      const parsed = parseQuery(raw(request.query));
+      if (!parsed.ok) return sendProblem(reply, invalid(parsed.problems));
+      const order = scvOrder(parsed.query.sort);
+      if (order.unknown.length > 0) {
+        return sendProblem(
+          reply,
+          invalid([
+            { path: 'querystring/sort', message: `Unknown sort '${order.unknown.join(', ')}'.` },
+          ]),
+        );
+      }
+      const release = db.resolve(parsed.query.release);
+      const { rows, total } = await listScvs(db, release, parsed.query, order.sql);
+      return {
+        release,
+        query: parsed.query.canonical,
+        data: rows,
+        page: { limit: parsed.query.limit, offset: parsed.query.offset, total },
+      };
+    },
+  );
+
+  app.get(
+    '/scvs/summary',
+    {
+      schema: {
+        tags: ['scvs'],
+        description: 'Counts of the SCVs matching the filters, grouped by up to two dimensions.',
+        querystring: documentedQuery('summary'),
+        response: { 200: SummaryResponse },
+      },
+    },
+    async (request, reply) => {
+      const parsed = parseQuery(raw(request.query));
+      if (!parsed.ok) return sendProblem(reply, invalid(parsed.problems));
+      const release = db.resolve(parsed.query.release);
+      const summary = await summarizeScvs(db, release, parsed.query);
+      return { release, query: parsed.query.canonical, ...summary };
+    },
+  );
 };
+
+function invalid(problems: { path: string; message: string }[]) {
+  return { ...problem(400, 'The request has invalid parameters.'), errors: problems };
+}

@@ -1,0 +1,7 @@
+// The shared query model (docs/api.md): filters, dimensions, URL parsing and SQL compilation.
+// Browser-safe: no Node built-ins and no database import.
+export * from './dimensions.ts';
+export * from './filters.ts';
+export * from './parse.ts';
+export * from './sql.ts';
+export * from './summary.ts';

@@ -8,6 +8,8 @@ import {
   SubmitterDetail,
   VariantDetail,
   item,
+  list,
+  SummaryResponse,
 } from '@cvb/shared/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -117,5 +119,61 @@ describe('local access', () => {
   it('rejects a request for a host name this server does not answer to', async () => {
     const { status } = await get('/api/v1/releases', ProblemDetails, 'evil.example:8080');
     expect(status).toBe(403);
+  });
+});
+
+const ScvPage = list(ScvRow);
+
+describe('lists and summaries', () => {
+  it('pages SCVs matching filters, with a count on request', async () => {
+    const { status, body } = await get(
+      '/api/v1/scvs?gene=3077&bucket=P&limit=5&count=true',
+      ScvPage,
+    );
+    expect(status).toBe(200);
+    expect(body.data).toHaveLength(5);
+    expect(body.data.every((r) => r.bucket === 'P')).toBe(true);
+    expect(body.page.total).toBeGreaterThan(5);
+    expect(body.query).toMatchObject({
+      gene: ['3077'],
+      bucket: ['P'],
+      gene_relationship: ['within'],
+    });
+  });
+
+  it('sorts by date last evaluated, newest first', async () => {
+    const { body } = await get('/api/v1/scvs?variant=10&sort=-evaluated', ScvPage);
+    const dates = body.data.map((r) => r.dateLastEvaluated ?? '');
+    expect(dates).toEqual([...dates].sort().reverse());
+  });
+
+  it('counts by one dimension, with labels and totals', async () => {
+    const { status, body } = await get(
+      '/api/v1/scvs/summary?gene=3077&group_by=bucket',
+      SummaryResponse,
+    );
+    expect(status).toBe(200);
+    const sum = body.rows.reduce((n, r) => n + Number(r['scvs']), 0);
+    expect(sum).toBe(body.totals['scvs']);
+    expect(body.dimensions[0]?.labels['P']).toBe('Pathogenic/Likely pathogenic');
+  });
+
+  it('crosses two dimensions, paging the first', async () => {
+    const { body } = await get(
+      '/api/v1/scvs/summary?gene=3077&group_by=submitter,bucket&limit=2&measure=scvs,variants',
+      SummaryResponse,
+    );
+    const submitters = new Set(body.rows.map((r) => r['submitter']));
+    expect(submitters.size).toBe(2);
+    expect(body.page.total).toBeGreaterThan(2);
+    expect(Object.keys(body.dimensions[0]?.labels ?? {})).toHaveLength(2);
+  });
+
+  it('rejects unknown filters and sort keys with the parameter named', async () => {
+    const bad = await get('/api/v1/scvs?bogus=1', ProblemDetails);
+    expect(bad.status).toBe(400);
+    expect(bad.body.errors?.[0]?.path).toBe('querystring/bogus');
+    const sort = await get('/api/v1/scvs?sort=name', ProblemDetails);
+    expect(sort.body.errors?.[0]?.path).toBe('querystring/sort');
   });
 });
