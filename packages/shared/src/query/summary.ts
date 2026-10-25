@@ -97,12 +97,15 @@ export function compileSummaryRows(query: ParsedQuery): CompiledSql {
         GROUP BY 1
         ORDER BY rank_measure DESC, d0 NULLS LAST
         LIMIT ${limit} OFFSET ${offset}
+      ),
+      grouped AS (
+        SELECT ${first.key('d0')} AS d0, ${second.key('d1')} AS d1, ${measures(query)}
+        FROM base s ${firstJoin} ${join(second, 'd1')}
+        WHERE ${first.key('d0')} IN (SELECT d0 FROM top) OR (${first.key('d0')} IS NULL AND EXISTS (SELECT 1 FROM top WHERE d0 IS NULL))
+        GROUP BY 1, 2
       )
-      SELECT ${first.key('d0')} AS d0, ${second.key('d1')} AS d1, ${measures(query)}
-      FROM base s ${firstJoin} ${join(second, 'd1')}
-      WHERE ${first.key('d0')} IN (SELECT d0 FROM top) OR (${first.key('d0')} IS NULL AND EXISTS (SELECT 1 FROM top WHERE d0 IS NULL))
-      GROUP BY 1, 2
-      ORDER BY (SELECT rank_measure FROM top WHERE top.d0 IS NOT DISTINCT FROM ${first.key('d0')}) DESC, d0 NULLS LAST, ${order} DESC, d1 NULLS LAST`,
+      SELECT g.* FROM grouped g LEFT JOIN top t ON t.d0 IS NOT DISTINCT FROM g.d0
+      ORDER BY t.rank_measure DESC, g.d0 NULLS LAST, g.${order} DESC, g.d1 NULLS LAST`,
     params: params.values,
   };
 }

@@ -1,7 +1,15 @@
 // Variant reads. The detail is assembled from a few small queries, each reading only the rows
 // of one variant (the tables are sorted by variation_id).
 
-import { AggregateStatement, VariantDetail, VariantGene, VariantHgvs, Xref } from '@cvb/shared/api';
+import {
+  AggregateStatement,
+  VariantDetail,
+  VariantGene,
+  VariantHgvs,
+  Xref,
+  type VariantRow,
+} from '@cvb/shared/api';
+import { SqlParams, type ParsedQuery } from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
 
@@ -132,4 +140,179 @@ async function vrsMember(
     return rows[0] === undefined ? null : VariantDetail.shape.vrs.parse(rows[0]);
   }
   return null;
+}
+
+/** Sort keys a variant list accepts. Every sort ends with the variant, for stable pages. */
+const VARIANT_SORTS: Record<string, string> = {
+  conflict: 's.level_rank',
+  pairs: 's.pair_count',
+  variant: 's.variation_id',
+};
+
+export function variantOrder(sort: string[]): { sql: string; unknown: string[] } {
+  const parts: string[] = [];
+  const unknown: string[] = [];
+  for (const key of sort.length === 0 ? ['-conflict', '-pairs'] : sort) {
+    const desc = key.startsWith('-');
+    const column = VARIANT_SORTS[desc ? key.slice(1) : key];
+    if (column === undefined) unknown.push(key);
+    else parts.push(`${column} ${desc ? 'DESC NULLS LAST' : 'ASC NULLS LAST'}`);
+  }
+  parts.push('s.variation_id', 's.classification_type');
+  return { sql: parts.join(', '), unknown };
+}
+
+const StatusRow = z.object({
+  variation_id: z.int(),
+  classification_type: z.string(),
+  conflict_level: z.string(),
+  pair_count: z.int(),
+});
+
+/**
+ * A page of variants with their conflict status, from the variant resource's base; then each
+ * page variant's name, genes, aggregate call and SCV counts, in four small queries.
+ */
+export async function listVariants(
+  db: Database,
+  release: string,
+  query: ParsedQuery,
+  order: string,
+): Promise<{ rows: VariantRow[]; total: number | null }> {
+  const input = {
+    filters: query.filters,
+    filterOptions: { geneRelationships: query.geneRelationships },
+    pair: query.pair,
+  };
+  const params = new SqlParams();
+  const base = query.resource.base(input, params);
+  const limit = params.add(query.limit);
+  const offset = params.add(query.offset);
+  let total: Promise<number | null> = Promise.resolve(null);
+  if (query.count) {
+    const countParams = new SqlParams();
+    const countBase = query.resource.base(input, countParams);
+    total = db
+      .query(
+        release,
+        `WITH ${countBase} SELECT count(*)::INTEGER AS n FROM base`,
+        countParams.values,
+      )
+      .then((rows) => z.object({ n: z.int() }).parse(rows[0]).n);
+  }
+  const [pageRows, n] = await Promise.all([
+    db.query(
+      release,
+      `WITH ${base}
+       SELECT s.variation_id, s.classification_type, s.conflict_level, s.pair_count
+       FROM base s ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`,
+      params.values,
+    ),
+    total,
+  ]);
+  const page = z.array(StatusRow).parse(pageRows);
+  if (page.length === 0) return { rows: [], total: n };
+
+  const ids = [...new Set(page.map((p) => p.variation_id))];
+  // Each query below takes the page's variant IDs as its parameters $1..$n.
+  const inIds = new SqlParams().list(ids);
+  const [names, genes, roots, counts] = await Promise.all([
+    db.query(
+      release,
+      `SELECT variation_id, name FROM variant WHERE variation_id IN (${inIds})`,
+      ids,
+    ),
+    db.query(
+      release,
+      `SELECT vg.variation_id, list(coalesce(g.symbol, 'Gene ' || vg.gene_id) ORDER BY g.symbol)[1:5] AS genes,
+              count(*)::INTEGER AS gene_count
+       FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
+       WHERE vg.variation_id IN (${inIds}) GROUP BY 1`,
+      ids,
+    ),
+    db.query(
+      release,
+      `SELECT vs.variation_id, vs.classification_type, vs.classification, vs.review_status, rs.stars
+       FROM vcv_statement vs LEFT JOIN review_status rs ON rs.status = vs.review_status
+       WHERE vs.variation_id IN (${inIds}) AND vs.node_kind = 'root'`,
+      ids,
+    ),
+    db.query(
+      release,
+      `SELECT s.variation_id, s.classification_type, coalesce(ct.bucket, 'N') AS bucket,
+              count(*)::INTEGER AS scvs, count(DISTINCT s.submitter_id)::INTEGER AS submitters
+       FROM scv s LEFT JOIN classification_term ct
+         ON ct.classification_type = s.classification_type AND ct.term = s.term
+       WHERE s.variation_id IN (${inIds}) GROUP BY GROUPING SETS ((1, 2, 3), (1, 2))`,
+      ids,
+    ),
+  ]);
+  const nameOf = new Map(
+    z
+      .array(z.object({ variation_id: z.int(), name: z.string() }))
+      .parse(names)
+      .map((r) => [r.variation_id, r.name]),
+  );
+  const genesOf = new Map(
+    z
+      .array(z.object({ variation_id: z.int(), genes: z.array(z.string()), gene_count: z.int() }))
+      .parse(genes)
+      .map((r) => [r.variation_id, r]),
+  );
+  const rootOf = new Map(
+    z
+      .array(
+        z.object({
+          variation_id: z.int(),
+          classification_type: z.string(),
+          classification: z.string().nullable(),
+          review_status: z.string().nullable(),
+          stars: z.int().nullable(),
+        }),
+      )
+      .parse(roots)
+      .map((r) => [`${String(r.variation_id)}:${r.classification_type}`, r]),
+  );
+  const countRows = z
+    .array(
+      z.object({
+        variation_id: z.int(),
+        classification_type: z.string(),
+        bucket: z.string().nullable(),
+        scvs: z.int(),
+        submitters: z.int(),
+      }),
+    )
+    .parse(counts);
+  const rows: VariantRow[] = page.map((p) => {
+    const key = `${String(p.variation_id)}:${p.classification_type}`;
+    const mine = countRows.filter(
+      (c) => c.variation_id === p.variation_id && c.classification_type === p.classification_type,
+    );
+    const totals = mine.find((c) => c.bucket === null);
+    const bucket = (b: string) => mine.find((c) => c.bucket === b)?.scvs ?? 0;
+    const root = rootOf.get(key);
+    const g = genesOf.get(p.variation_id);
+    return {
+      variationId: p.variation_id,
+      name: nameOf.get(p.variation_id) ?? '',
+      classificationType: p.classification_type,
+      conflictLevel: p.conflict_level,
+      pairCount: p.pair_count,
+      genes: g?.genes ?? [],
+      geneCount: g?.gene_count ?? 0,
+      aggregate:
+        root === undefined
+          ? null
+          : {
+              classification: root.classification,
+              reviewStatus: root.review_status,
+              stars: root.stars,
+            },
+      scvCount: totals?.scvs ?? 0,
+      submitterCount: totals?.submitters ?? 0,
+      buckets: { P: bucket('P'), V: bucket('V'), B: bucket('B'), O: bucket('O'), N: bucket('N') },
+    };
+  });
+  return { rows, total: n };
 }

@@ -9,8 +9,10 @@ import {
   VariantDetail,
   item,
   list,
+  PairRow,
   SearchResponse,
   SummaryResponse,
+  VariantRow,
   Vocabularies,
 } from '@cvb/shared/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -232,5 +234,91 @@ describe('search and vocabularies', () => {
       expect.arrayContaining(['a.submitter', 'b.term', 'conflict_level']),
     );
     expect(body.data.placeholderConditions.length).toBeGreaterThan(0);
+  });
+});
+
+const PairPage = list(PairRow);
+const VariantPage = list(VariantRow);
+
+describe('conflicts: pairs and variants', () => {
+  it("counts a gene's variants by conflict status, adding up to the total", async () => {
+    const { status, body } = await get(
+      '/api/v1/variants/summary?gene=3077&group_by=conflict_level',
+      SummaryResponse,
+    );
+    expect(status).toBe(200);
+    const sum = body.rows.reduce((n, r) => n + Number(r['variants']), 0);
+    expect(sum).toBe(body.totals['variants']);
+    expect(body.rows.map((r) => r['conflict_level'])).toEqual(
+      expect.arrayContaining(['single', 'none', '5']),
+    );
+    expect(body.query).toMatchObject({ condition_match: ['strict'], flagged: ['exclude'] });
+  });
+
+  it('lists conflicting variants with their status and SCV counts', async () => {
+    const { body } = await get(
+      '/api/v1/variants?gene=3077&min_conflict_level=5&count=true',
+      VariantPage,
+    );
+    expect(body.data.map((v) => v.variationId)).toContain(10);
+    expect(body.data.every((v) => v.conflictLevel === '5')).toBe(true);
+    const h63d = body.data.find((v) => v.variationId === 10);
+    expect(h63d?.buckets.P).toBeGreaterThan(0);
+    expect(h63d?.aggregate?.classification).toMatch(/Conflicting/);
+  });
+
+  it('lists pairs with both SCVs, from two submitters', async () => {
+    const { body } = await get(
+      '/api/v1/scv-pairs?variant=10&min_conflict_level=5&limit=10',
+      PairPage,
+    );
+    expect(body.data.length).toBeGreaterThan(0);
+    for (const p of body.data) {
+      expect(p.level).toBe(5);
+      expect(p.a.variationId).toBe(10);
+      expect(p.b.variationId).toBe(10);
+      expect(p.a.submitter.submitterId).not.toBe(p.b.submitter.submitterId);
+      // One side is pathogenic or likely pathogenic and the other isn't.
+      expect([p.a.bucket, p.b.bucket].filter((b) => b === 'P')).toHaveLength(1);
+    }
+  });
+
+  it('crosses the two sides in a term grid that adds up to the pairs', async () => {
+    const grid = await get(
+      '/api/v1/scv-pairs/summary?variant=10&group_by=a.term,b.term&limit=500',
+      SummaryResponse,
+    );
+    const sum = grid.body.rows.reduce((n, r) => n + Number(r['pairs']), 0);
+    expect(sum).toBe(grid.body.totals['pairs']);
+  });
+
+  it('finds more conflicts as the condition rule loosens, and with flagged SCVs', async () => {
+    const pairs = async (extra: string) => {
+      const { body } = await get(
+        `/api/v1/scv-pairs/summary?gene=3077&min_conflict_level=2&group_by=conflict_level${extra}`,
+        SummaryResponse,
+      );
+      return body.totals['pairs'] ?? 0;
+    };
+    const strict = await pairs('');
+    const wildcard = await pairs('&condition_match=wildcard');
+    const any = await pairs('&condition_match=any');
+    expect(strict).toBeLessThanOrEqual(wildcard);
+    expect(wildcard).toBeLessThanOrEqual(any);
+    expect(strict).toBeLessThan(any);
+    expect(await pairs('&condition_match=any&flagged=include')).toBeGreaterThanOrEqual(any);
+  });
+
+  it('compares a submitter with itself, and refuses side filters on SCVs', async () => {
+    const { body: scvs } = await get('/api/v1/variants/10/scvs', ScvList);
+    const lab = scvs.data[0]?.submitter.submitterId ?? 0;
+    const self = await get(
+      `/api/v1/scv-pairs?a.submitter=${String(lab)}&b.submitter=${String(lab)}&distinct_submitters=false`,
+      PairPage,
+    );
+    expect(self.status).toBe(200);
+    expect(self.body.query).toMatchObject({ distinct_submitters: ['false'] });
+    const bad = await get('/api/v1/scvs?a.submitter=1', ProblemDetails);
+    expect(bad.status).toBe(400);
   });
 });

@@ -14,25 +14,31 @@ import {
   VariantDetail,
   item,
   list,
+  PairRow,
   SearchQuery,
   SearchResponse,
   SummaryResponse,
+  VariantRow,
   Vocabularies,
 } from '@cvb/shared/api';
 import {
   documentedQuery,
   parseGeneRelationships,
   parseQuery,
+  type ParsedQuery,
   type RawQuery,
+  type ResourceName,
 } from '@cvb/shared/query';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Database } from '../data/database.ts';
 import { problem, sendProblem } from '../http/errors.ts';
 import { conditionDetail, geneDetail, submitterDetail } from './entities/queries.ts';
-import { listScvs, scvDetail, scvOrder, summarizeScvs, variantScvs } from './scvs/queries.ts';
+import { listPairs, pairOrder } from './pairs/queries.ts';
+import { listScvs, scvDetail, scvOrder, variantScvs } from './scvs/queries.ts';
+import { summarize } from './summaries/queries.ts';
 import { search } from './search/queries.ts';
-import { variantDetail } from './variants/queries.ts';
+import { listVariants, variantDetail, variantOrder } from './variants/queries.ts';
 import { vocabularies } from './vocabulary/queries.ts';
 
 const IdParams = z.object({ id: IntId });
@@ -208,22 +214,116 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
     },
   );
 
-  app.get(
+  /** A summary endpoint for a resource: parse, resolve the release, count. */
+  function summaryRoute(path: string, resource: ResourceName, tag: string, description: string) {
+    app.get(
+      path,
+      {
+        schema: {
+          tags: [tag],
+          description,
+          querystring: documentedQuery('summary', resource),
+          response: { 200: SummaryResponse },
+        },
+      },
+      async (request, reply) => {
+        const parsed = parseQuery(raw(request.query), resource);
+        if (!parsed.ok) return sendProblem(reply, invalid(parsed.problems));
+        const release = db.resolve(parsed.query.release);
+        const summary = await summarize(db, release, parsed.query);
+        return { release, query: parsed.query.canonical, ...summary };
+      },
+    );
+  }
+
+  summaryRoute(
     '/scvs/summary',
+    'scvs',
+    'scvs',
+    'Counts of the SCVs matching the filters, grouped by up to two dimensions.',
+  );
+  summaryRoute(
+    '/scv-pairs/summary',
+    'pairs',
+    'conflicts',
+    'Counts of SCV pairs (two SCVs on one variant), grouped by up to two dimensions, such as a.term by b.term, or b.submitter by conflict_level.',
+  );
+  summaryRoute(
+    '/variants/summary',
+    'variants',
+    'conflicts',
+    "Counts of variants, grouped by up to two dimensions, such as conflict_level: each variant's conflict status under the filters.",
+  );
+
+  /** Parses a list request for a resource and its sort, or answers 400. */
+  function parseList(
+    rawQuery: Record<string, unknown>,
+    resource: ResourceName,
+    order: (sort: string[]) => { sql: string; unknown: string[] },
+  ):
+    | { ok: true; query: ParsedQuery; order: string }
+    | { ok: false; problem: ReturnType<typeof invalid> } {
+    const parsed = parseQuery(raw(rawQuery), resource);
+    if (!parsed.ok) return { ok: false, problem: invalid(parsed.problems) };
+    const sort = order(parsed.query.sort);
+    if (sort.unknown.length > 0) {
+      return {
+        ok: false,
+        problem: invalid([
+          { path: 'querystring/sort', message: `Unknown sort '${sort.unknown.join(', ')}'.` },
+        ]),
+      };
+    }
+    return { ok: true, query: parsed.query, order: sort.sql };
+  }
+
+  app.get(
+    '/scv-pairs',
     {
       schema: {
-        tags: ['scvs'],
-        description: 'Counts of the SCVs matching the filters, grouped by up to two dimensions.',
-        querystring: documentedQuery('summary'),
-        response: { 200: SummaryResponse },
+        tags: ['conflicts'],
+        description:
+          'Pairs of SCVs on one variant and classification type, with their conflict level, a page at a time. Sort: level (default -level), variant, a_evaluated, b_evaluated.',
+        querystring: documentedQuery('list', 'pairs'),
+        response: { 200: list(PairRow) },
       },
     },
     async (request, reply) => {
-      const parsed = parseQuery(raw(request.query));
-      if (!parsed.ok) return sendProblem(reply, invalid(parsed.problems));
+      const parsed = parseList(request.query, 'pairs', pairOrder);
+      if (!parsed.ok) return sendProblem(reply, parsed.problem);
       const release = db.resolve(parsed.query.release);
-      const summary = await summarizeScvs(db, release, parsed.query);
-      return { release, query: parsed.query.canonical, ...summary };
+      const { rows, total } = await listPairs(db, release, parsed.query, parsed.order);
+      return {
+        release,
+        query: parsed.query.canonical,
+        data: rows,
+        page: { limit: parsed.query.limit, offset: parsed.query.offset, total },
+      };
+    },
+  );
+
+  app.get(
+    '/variants',
+    {
+      schema: {
+        tags: ['variants'],
+        description:
+          'Variants with an SCV matching the filters (side a), each with its conflict status against side b, a page at a time. Sort: conflict (default -conflict,-pairs), pairs, variant.',
+        querystring: documentedQuery('list', 'variants'),
+        response: { 200: list(VariantRow) },
+      },
+    },
+    async (request, reply) => {
+      const parsed = parseList(request.query, 'variants', variantOrder);
+      if (!parsed.ok) return sendProblem(reply, parsed.problem);
+      const release = db.resolve(parsed.query.release);
+      const { rows, total } = await listVariants(db, release, parsed.query, parsed.order);
+      return {
+        release,
+        query: parsed.query.canonical,
+        data: rows,
+        page: { limit: parsed.query.limit, offset: parsed.query.offset, total },
+      };
     },
   );
 };

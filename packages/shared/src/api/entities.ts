@@ -203,3 +203,43 @@ export const GeneQuery = z.object({
 
 /** A path parameter holding an integer id. */
 export const IntId = z.coerce.number().int().positive();
+
+/** /scv-pairs rows: two SCVs on one variant, and their conflict level. */
+export const PairRow = z.object({
+  variationId: z.int(),
+  variantName: z.string(),
+  classificationType: z.string(),
+  /** 0 to 5 (docs/data.md#conflicts); null if a term is unmapped. */
+  level: z.int().nullable(),
+  a: ScvRow,
+  b: ScvRow,
+});
+export type PairRow = z.infer<typeof PairRow>;
+
+const BucketCounts = z.object({ P: z.int(), V: z.int(), B: z.int(), O: z.int(), N: z.int() });
+
+/** /variants rows: a variant (for one classification type) and its conflict status. */
+export const VariantRow = z.object({
+  variationId: z.int(),
+  name: z.string(),
+  classificationType: z.string(),
+  /** single, none, na, or the highest pair level '1' to '5', under the request's filters. */
+  conflictLevel: z.string(),
+  /** Pairs compared for the status. */
+  pairCount: z.int(),
+  genes: z.array(z.string()),
+  geneCount: z.int(),
+  /** ClinVar's aggregate (VCV root) call for the classification type. */
+  aggregate: z
+    .object({
+      classification: z.string().nullable(),
+      reviewStatus: z.string().nullable(),
+      stars: z.int().nullable(),
+    })
+    .nullable(),
+  scvCount: z.int(),
+  submitterCount: z.int(),
+  /** SCVs of the classification type by significance bucket. */
+  buckets: BucketCounts,
+});
+export type VariantRow = z.infer<typeof VariantRow>;
