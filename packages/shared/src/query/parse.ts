@@ -46,6 +46,7 @@ const DEFAULT_LIMIT = 50;
 
 /** Pair options, valid on pair and variant resources only. */
 const PAIR_PARAMS = new Set([
+  'terms',
   'condition_match',
   'flagged',
   'distinct_submitters',
@@ -231,6 +232,11 @@ function parsePairOptions(
     );
   }
 
+  const terms = values(raw['terms']);
+  if (terms.length > 0 && (terms.length !== 2 || resource.name !== 'pairs')) {
+    problem('terms', 'terms takes two term codes, on pairs only.');
+  }
+
   // Directed when the two sides are filtered differently; then A and B are distinct roles.
   const sideKey = (side: Side) =>
     filters
@@ -246,6 +252,7 @@ function parsePairOptions(
     if (distinct === 'false') canonical['distinct_submitters'] = ['false'];
     if (minRaw !== undefined) canonical['min_conflict_level'] = [minRaw];
     if (levels.length > 0) canonical['conflict_level'] = levels;
+    if (terms.length === 2) canonical['terms'] = terms;
   }
   return {
     conditionMatch: conditionMatch.success ? conditionMatch.data : 'strict',
@@ -253,6 +260,10 @@ function parsePairOptions(
     distinctSubmitters: distinct !== 'false',
     minLevel: min?.success === true ? Number(min.data) : null,
     levels: levels.length > 0 ? levels : null,
+    terms:
+      terms.length === 2 && terms[0] !== undefined && terms[1] !== undefined
+        ? [terms[0], terms[1]]
+        : null,
     directed,
   };
 }
@@ -329,6 +340,12 @@ export function documentedQuery(kind: 'list' | 'summary', resourceName: Resource
       .optional()
       .describe('true (default); false to compare a submitter with itself.');
     shape['min_conflict_level'] = z.string().optional().describe('Minimum conflict level, 0 to 5.');
+    if (resource.name === 'pairs') {
+      shape['terms'] = z
+        .string()
+        .optional()
+        .describe('Two term codes, e.g. lp,vus: pairs with these terms in either order.');
+    }
     shape['conflict_level'] = multi.describe(
       resource.name === 'variants'
         ? 'Variant statuses: single, none, na, 1 to 5.'

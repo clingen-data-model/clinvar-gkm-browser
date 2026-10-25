@@ -30,5 +30,10 @@ export const SummaryResponse = z.object({
   rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))),
   totals: z.record(z.string(), z.number()),
   page: Page,
+  /**
+   * Pairs and variants: flagged SCVs (on side A) left out of the comparison, so a page can say
+   * so (flagged=exclude, the default). Null where nothing was left out or it doesn't apply.
+   */
+  flaggedExcluded: z.int().nullable(),
 });
 export type SummaryResponse = z.infer<typeof SummaryResponse>;

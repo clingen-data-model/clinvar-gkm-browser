@@ -54,6 +54,8 @@ export interface PairOptions {
   minLevel: number | null;
   /** Pair levels (pairs), or variant statuses (variants), to keep. */
   levels: string[] | null;
+  /** Pairs whose two terms are these, in either order (a cell of a term grid without sides). */
+  terms: [string, string] | null;
   /**
    * Whether the sides differ. Without side filters, each pair appears once (a.scv_id <
    * b.scv_id); with them, A is one side and B the other.
@@ -122,6 +124,12 @@ export function pairLevelWhere(options: PairOptions, params: SqlParams): string 
   const parts: string[] = [];
   if (options.minLevel !== null) parts.push(`level >= ${params.add(options.minLevel)}`);
   if (options.levels !== null) parts.push(`level::VARCHAR IN (${params.list(options.levels)})`);
+  if (options.terms !== null) {
+    const [x, y] = options.terms.map((t) => params.add(t));
+    parts.push(
+      `((a_term = ${x ?? 'NULL'} AND b_term = ${y ?? 'NULL'}) OR (a_term = ${y ?? 'NULL'} AND b_term = ${x ?? 'NULL'}))`,
+    );
+  }
   return parts.length === 0 ? 'true' : parts.join(' AND ');
 }
 

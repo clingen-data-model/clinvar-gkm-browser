@@ -81,3 +81,15 @@ describe('pair SQL', () => {
     expect(directed).toContain('s.b_submitter_id::VARCHAR');
   });
 });
+
+describe('unordered term pairs', () => {
+  it('takes two codes on pairs only', () => {
+    expect(parseQuery({ terms: 'lp,vus' }, 'pairs').ok).toBe(true);
+    expect(parseQuery({ terms: 'lp' }, 'pairs').ok).toBe(false);
+    expect(parseQuery({ terms: 'lp,vus' }, 'variants').ok).toBe(false);
+    const sql = compileSummaryRows(
+      parsed({ terms: 'lp,vus', group_by: 'conflict_level' }, 'pairs'),
+    );
+    expect(sql.sql).toMatch(/a_term = \$\d+ AND b_term = \$\d+\) OR \(a_term/);
+  });
+});
