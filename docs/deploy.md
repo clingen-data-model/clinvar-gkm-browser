@@ -31,7 +31,7 @@ Images: `us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-bro
 ```sh
 # Deploy (or update) the service, behind IAP: Google sign-in, no code in the app.
 gcloud run deploy clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
-  --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-58a1d23 \
+  --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-c5ca4ee \
   --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=3 --cpu-boost \
   --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-522856288592.us-east1.run.app \
   --no-allow-unauthenticated --iap
