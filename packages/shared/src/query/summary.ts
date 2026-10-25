@@ -119,7 +119,10 @@ export function compileSummaryTotals(query: ParsedQuery): CompiledSql {
   const distinctFirst =
     first === undefined
       ? 'NULL::INTEGER AS first_values'
-      : `(SELECT count(DISTINCT ${first.key('d0')})::INTEGER FROM base s ${first.join('d0', ctx)} WHERE ${matchWhere(first, query, params, ctx)}) AS first_values`;
+      : // count(DISTINCT) skips NULL, which the rows have as a group of its own.
+        `(SELECT (count(DISTINCT k) + CASE WHEN bool_or(k IS NULL) THEN 1 ELSE 0 END)::INTEGER
+          FROM (SELECT ${first.key('d0')} AS k FROM base s ${first.join('d0', ctx)}
+                WHERE ${matchWhere(first, query, params, ctx)})) AS first_values`;
   return {
     sql: `WITH ${withBase} SELECT ${measures(query)}, ${distinctFirst} FROM base s`,
     params: params.values,

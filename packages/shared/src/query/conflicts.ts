@@ -57,8 +57,10 @@ export interface PairOptions {
   /** Pairs whose two terms are these, in either order (a cell of a term grid without sides). */
   terms: [string, string] | null;
   /**
-   * Whether the sides differ. Without side filters, each pair appears once (a.scv_id <
-   * b.scv_id); with them, A is one side and B the other.
+   * Whether the sides differ. With side filters, A is one side and B the other. Without, each
+   * pair appears once, oriented so A has the lower term code (then the lower SCV id): a.term and
+   * b.term then cross into one triangle with each unordered pair of terms in one cell, and
+   * a./b. dimensions other than term are arbitrary.
    */
   directed: boolean;
 }
@@ -104,7 +106,10 @@ const SIDE_SELECT = `s.scv_id, s.variation_id, s.submitter_id, s.classification_
 export function pairCtes(whereA: string, whereB: string, options: PairOptions): string {
   const flagged = options.excludeFlagged ? ` AND s.submission_level <> 'FLAG'` : '';
   const detectable = ` AND s.classification_type IN (SELECT code FROM classification_type WHERE conflict_detectable)`;
-  const order = options.directed ? 'a.scv_id <> b.scv_id' : 'a.scv_id < b.scv_id';
+  const order = options.directed
+    ? 'a.scv_id <> b.scv_id'
+    : `(coalesce(a.term, '') < coalesce(b.term, '')
+        OR (coalesce(a.term, '') = coalesce(b.term, '') AND a.scv_id < b.scv_id))`;
   const submitters = options.distinctSubmitters ? ' AND a.submitter_id <> b.submitter_id' : '';
   const sides = (x: 'a' | 'b') => PAIR_SIDE_COLUMNS.map((c) => `${x}.${c} AS ${x}_${c}`).join(', ');
   return `side_a AS (SELECT ${SIDE_SELECT} FROM scv s WHERE (${whereA})${flagged}${detectable}),

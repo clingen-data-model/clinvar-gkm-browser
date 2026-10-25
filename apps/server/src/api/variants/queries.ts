@@ -154,7 +154,9 @@ export function variantOrder(sort: string[]): { sql: string; unknown: string[] }
   const unknown: string[] = [];
   for (const key of sort.length === 0 ? ['-conflict', '-pairs'] : sort) {
     const desc = key.startsWith('-');
-    const column = VARIANT_SORTS[desc ? key.slice(1) : key];
+    const name = desc ? key.slice(1) : key;
+    // Own keys only: `constructor` and the like aren't sorts.
+    const column = Object.hasOwn(VARIANT_SORTS, name) ? VARIANT_SORTS[name] : undefined;
     if (column === undefined) unknown.push(key);
     else parts.push(`${column} ${desc ? 'DESC NULLS LAST' : 'ASC NULLS LAST'}`);
   }

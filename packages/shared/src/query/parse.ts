@@ -74,9 +74,11 @@ const Offset = z.coerce.number().int().min(0);
 const PairLevel = z.enum(['0', '1', '2', '3', '4', '5']);
 const VariantStatus = z.enum(['single', 'none', 'na', '1', '2', '3', '4', '5']);
 
-function values(raw: string | string[] | undefined): string[] {
+/** A parameter's values: repeated parameters, each split on commas unless it is free text. */
+function values(raw: string | string[] | undefined, text = false): string[] {
   if (raw === undefined) return [];
-  return (Array.isArray(raw) ? raw : [raw]).flatMap((v) => v.split(',')).filter((v) => v !== '');
+  const given = Array.isArray(raw) ? raw : [raw];
+  return (text ? given : given.flatMap((v) => v.split(','))).filter((v) => v !== '');
 }
 
 /** A filter key's parts: `not.a.submitter` -> negated, side a, filter submitter. */
@@ -117,7 +119,7 @@ export function parseQuery(
       problem(key, `Side filters (a., b.) apply to pairs and variants, not ${resource.name}.`);
       continue;
     }
-    const applied = filter.parse(values(value), negate, side);
+    const applied = filter.parse(values(value, filter.text), negate, side);
     if ('error' in applied) {
       problem(key, applied.error);
       continue;
@@ -125,8 +127,9 @@ export function parseQuery(
     filters.push(applied);
     canonical[key] = applied.values;
   }
-  // Pathogenicity unless asked otherwise (classification_type=any for every type).
-  if (!filters.some((f) => f.name === 'classification_type' && f.side === 'both')) {
+  // Pathogenicity unless asked otherwise (classification_type=any for every type). A side's own
+  // classification_type replaces it too: pairs join on type, so the other side follows.
+  if (!filters.some((f) => f.name === 'classification_type')) {
     const applied = FILTERS_BY_NAME.get('classification_type')?.parse(['PATH'], false);
     if (applied !== undefined && !('error' in applied)) {
       filters.push(applied);
@@ -157,12 +160,12 @@ export function parseQuery(
 
   const measures: string[] = [];
   for (const name of values(raw['measure'])) {
-    if (name in resource.measures) measures.push(name);
+    if (Object.hasOwn(resource.measures, name)) measures.push(name);
     else problem('measure', `Unknown measure '${name}' for ${resource.name}.`);
   }
   if (measures.length === 0) measures.push(resource.defaultMeasure);
 
-  const matchText = values(raw['match'])[0]?.trim() ?? '';
+  const matchText = values(raw['match'], true)[0]?.trim() ?? '';
   const match = matchText === '' ? null : matchText;
   if (match !== null) {
     if (groupBy.length === 0) problem('match', 'match filters the first group_by dimension.');
@@ -241,7 +244,7 @@ function parsePairOptions(
   const sideKey = (side: Side) =>
     filters
       .filter((f) => f.side === side)
-      .map((f) => `${f.negate ? 'not.' : ''}${f.name}=${f.values.join(',')}`)
+      .map((f) => `${f.negate ? 'not.' : ''}${f.name}=${[...new Set(f.values)].sort().join(',')}`)
       .sort()
       .join('&');
   const directed = sideKey('a') !== sideKey('b');

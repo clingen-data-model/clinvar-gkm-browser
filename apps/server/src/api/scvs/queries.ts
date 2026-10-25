@@ -149,7 +149,9 @@ export function scvOrder(sort: string[]): { sql: string; unknown: string[] } {
   const unknown: string[] = [];
   for (const key of sort) {
     const desc = key.startsWith('-');
-    const column = SCV_SORTS[desc ? key.slice(1) : key];
+    const name = desc ? key.slice(1) : key;
+    // Own keys only: `constructor` and the like aren't sorts.
+    const column = Object.hasOwn(SCV_SORTS, name) ? SCV_SORTS[name] : undefined;
     if (column === undefined) unknown.push(key);
     else parts.push(`${column} ${desc ? 'DESC NULLS LAST' : 'ASC NULLS LAST'}`);
   }

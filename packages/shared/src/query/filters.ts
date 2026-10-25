@@ -85,6 +85,11 @@ export interface Filter {
   name: string;
   label: string;
   description: string;
+  /**
+   * Free-text values (review statuses, methods, comments) can contain commas, so they're never
+   * split on them; give several by repeating the parameter. Other filters take `a,b` too.
+   */
+  text: boolean;
   /** Parses a filter's raw URL values, or returns the problem with the first bad one. */
   parse: (
     raw: readonly string[],
@@ -100,6 +105,8 @@ interface FilterDef<T> {
   value: z.ZodType<T>;
   /** Single-valued filters (dates, minimums) take only one value. */
   single?: boolean;
+  /** Free text, not split on commas (Filter.text). */
+  text?: boolean;
   sql: (values: T[], ctx: FilterContext) => string;
 }
 
@@ -108,7 +115,9 @@ function filter<T>(def: FilterDef<T>): Filter {
     name: def.name,
     label: def.label,
     description: def.description,
+    text: def.text === true,
     parse(raw, negate, side = 'both') {
+      if (raw.length === 0) return { error: `${def.name} needs a value.` };
       if (def.single === true && raw.length > 1) return { error: `${def.name} takes one value.` };
       const values: T[] = [];
       for (const r of raw) {
@@ -161,6 +170,7 @@ export const FILTERS: readonly Filter[] = [
     label: 'Variant type',
     description: "ClinVar's variation type, e.g. 'single nucleotide variant', 'Deletion'.",
     value: text,
+    text: true,
     sql: (v, { params, t }) =>
       `${t}.variation_id IN (SELECT variation_id FROM variant WHERE clinvar_variation_type IN (${params.list(v)}))`,
   }),
@@ -219,6 +229,7 @@ export const FILTERS: readonly Filter[] = [
     label: 'Review status',
     description: "ClinVar's review status text.",
     value: text,
+    text: true,
     sql: (v, { params, t }) => `${t}.review_status IN (${params.list(v)})`,
   }),
   filter({
@@ -233,6 +244,7 @@ export const FILTERS: readonly Filter[] = [
     label: 'Collection method',
     description: "ClinVar's collection method, e.g. 'clinical testing', 'research', 'curation'.",
     value: text,
+    text: true,
     sql: (v, { params, t }) => `list_has_any(${t}.collection_methods, [${params.list(v)}])`,
   }),
   filter({
@@ -288,6 +300,7 @@ export const FILTERS: readonly Filter[] = [
     label: 'Comment contains',
     description: 'Text in the submitter comment, case-insensitive. Slow (about 1 s).',
     value: text,
+    text: true,
     sql: (v, { params, t }) =>
       v.map((text) => `${t}.description ILIKE '%' || ${params.add(text)} || '%'`).join(' OR '),
   }),

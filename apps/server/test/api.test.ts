@@ -336,3 +336,74 @@ describe('conflicts: pairs and variants', () => {
     expect(bad.status).toBe(400);
   });
 });
+
+describe('query edge cases', () => {
+  it('keeps commas inside free-text filter values', async () => {
+    const status = 'criteria provided, single submitter';
+    const { body } = await get(
+      `/api/v1/scvs?review_status=${encodeURIComponent(status)}&count=true&limit=1`,
+      ScvPage,
+    );
+    expect(body.page.total).toBeGreaterThan(0);
+    expect(body.query).toMatchObject({ review_status: [status] });
+  });
+
+  it('refuses inherited names as sorts or measures, and empty filter values', async () => {
+    for (const url of [
+      '/api/v1/scvs?sort=constructor',
+      '/api/v1/scv-pairs?sort=__proto__',
+      '/api/v1/variants?sort=valueOf',
+      '/api/v1/scvs/summary?group_by=submitter&measure=toString',
+      '/api/v1/scvs?submitter=',
+    ]) {
+      const { status } = await get(url, ProblemDetails);
+      expect(status, url).toBe(400);
+    }
+  });
+
+  it('treats the same side filters in another order as undirected', async () => {
+    const { body: scvs } = await get('/api/v1/variants/10/scvs', ScvList);
+    const [x, y] = [...new Set(scvs.data.map((s) => s.submitter.submitterId))].map(String);
+    const total = async (q: string) =>
+      (await get(`/api/v1/scv-pairs/summary?variant=10&${q}`, SummaryResponse)).body.totals[
+        'pairs'
+      ];
+    const same = await total(`a.submitter=${x ?? ''},${y ?? ''}&b.submitter=${x ?? ''},${y ?? ''}`);
+    expect(await total(`a.submitter=${x ?? ''},${y ?? ''}&b.submitter=${y ?? ''},${x ?? ''}`)).toBe(
+      same,
+    );
+  });
+
+  it('pages summaries with the NULL group counted', async () => {
+    const { body } = await get(
+      '/api/v1/scvs/summary?gene=3077&group_by=year_evaluated&limit=500',
+      SummaryResponse,
+    );
+    expect(body.page.total).toBe(body.rows.length);
+  });
+
+  it('puts each unordered pair of terms in one cell when there are no sides', async () => {
+    const grid = await get(
+      '/api/v1/scv-pairs/summary?gene=3077&group_by=a.term,b.term&measure=variants&limit=500',
+      SummaryResponse,
+    );
+    const cells = grid.body.rows.map((r) => [r['a.term'], r['b.term']].sort().join('|'));
+    expect(new Set(cells).size).toBe(cells.length);
+    const pv = grid.body.rows.find(
+      (r) => [r['a.term'], r['b.term']].sort().join('|') === 'PATH:p|PATH:vus',
+    );
+    const drill = await get(
+      '/api/v1/scv-pairs/summary?gene=3077&terms=p,vus&group_by=conflict_level&measure=variants',
+      SummaryResponse,
+    );
+    expect(pv?.['variants']).toBe(drill.body.totals['variants']);
+  });
+
+  it('lets a side choose the classification type', async () => {
+    const { body } = await get(
+      '/api/v1/scv-pairs/summary?a.classification_type=ONCO&condition_match=any&group_by=conflict_level',
+      SummaryResponse,
+    );
+    expect(body.query).not.toHaveProperty('classification_type');
+  });
+});

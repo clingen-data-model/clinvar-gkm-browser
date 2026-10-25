@@ -21,7 +21,9 @@ export function pairOrder(sort: string[]): { sql: string; unknown: string[] } {
   const unknown: string[] = [];
   for (const key of sort.length === 0 ? ['-level'] : sort) {
     const desc = key.startsWith('-');
-    const column = PAIR_SORTS[desc ? key.slice(1) : key];
+    const name = desc ? key.slice(1) : key;
+    // Own keys only: `constructor` and the like aren't sorts.
+    const column = Object.hasOwn(PAIR_SORTS, name) ? PAIR_SORTS[name] : undefined;
     if (column === undefined) unknown.push(key);
     else parts.push(`${column} ${desc ? 'DESC NULLS LAST' : 'ASC NULLS LAST'}`);
   }

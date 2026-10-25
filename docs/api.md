@@ -38,7 +38,8 @@ All under `/api/v1`. `{id}` is the integer ID unless noted.
 ## Filters
 
 One vocabulary, shared by every list and summary endpoint that has the field. In URLs:
-- repeated parameters mean OR (`submitter=500031&submitter=26957`);
+- repeated parameters mean OR (`submitter=500031&submitter=26957`), and so do comma-separated values (`submitter=500031,26957`), except in free-text filters (`review_status`, `variant_type`, `method`, `comment`), whose values contain commas (`criteria provided, single submitter`): repeat those;
+- an empty value is an error, not a filter that matches nothing;
 - different parameters mean AND;
 - a `not.` prefix negates (`not.submitter=500031`).
 
@@ -102,7 +103,7 @@ A pair is two SCVs on the same variant with the same classification type. That's
   - `min_conflict_level` (0–5, on ClinVar Miner's scale in [data.md](data.md#conflicts));
   - `condition_match` (default `strict`: the two SCVs share a condition; also `wildcard` and `any`, see [Phase 2 plan](#three-resources-one-query-model));
   - `distinct_submitters` (default `true`).
-- **Each pair is listed once,** ordered `a.scv_id < b.scv_id`, unless side filters make `a` and `b` mean different things. Then pairs are directed: `a` matches the `a.` filters.
+- **Each pair is listed once,** unless side filters make `a` and `b` mean different things. Then pairs are directed: `a` matches the `a.` filters. Undirected pairs are oriented so `a` has the lower term code (then the lower SCV ID), so `group_by=a.term,b.term` is a triangle with each unordered pair of terms in one cell; other `a.`/`b.` dimensions are arbitrary without sides. Side filters that differ only in order (`a.submitter=1,2&b.submitter=2,1`) count as the same.
 
 ClinVar Miner's conflict pages map onto this resource:
 
@@ -212,7 +213,7 @@ The bases are SQL CTEs that the compiler emits, not separate code paths. A list 
   - 1: same term, different submitted text;
   - 0: agreement.
   - Level 4 (category) has no cases now that ClinVar-GKM separates risk factor, drug response and the other types.
-- **Unordered by default:** without side filters, each pair appears once (`a.scv_id < b.scv_id`). With side filters, pairs are directed (A is the lab, B the others).
+- **Unordered by default:** without side filters, each pair appears once (oriented by term code, then SCV ID). With side filters, pairs are directed (A is the lab, B the others).
 
 **A variant's conflict status** is computed from the pair base, so it always agrees with the pairs. It's one of:
 - `single`: no partner on side B;
@@ -246,7 +247,7 @@ Entity endpoints (`/genes/{id}` and the like) stay small: header facts and count
 - **`GET /scv-pairs`:** rows with both SCVs embedded as compact SCV rows (submitter, term, stars, date last evaluated, conditions, comment), the variant's ID and name, and the level. Sort by level, variant, either side's date.
 - **`GET /scv-pairs/summary`:** counts of pairs or variants by up to two dimensions (`a.term` × `b.term`, `b.submitter` × `conflict_level`, …).
 - **`GET /variants`:** rows with the variant's name, genes, the aggregate call and stars, SCV counts by bucket, submitter count, and the conflict status under the request's filters. Sort by status, SCV count, submitter count, name.
-- **`GET /variants/summary`:** variant counts by up to two dimensions, including `conflict_level`, `gene`, `condition`, `variant_type`.
+- **`GET /variants/summary`:** variant counts by up to two dimensions: `conflict_level`, `gene`, `variant_type`, `classification_type`. (`condition` is per SCV, so it isn't a variant dimension; filter by it instead.)
 
 No endpoint is specific to a page. Presets ("this lab against expert panels") are named sets of parameters in `packages/shared/src/presets.ts`, used by the web app, not API routes.
 
