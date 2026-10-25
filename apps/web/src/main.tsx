@@ -3,6 +3,7 @@ import { createRouter, RouterProvider, stringifySearchWith } from '@tanstack/rea
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ErrorPage } from './components/shell/ErrorPage.tsx';
+import { PagePending } from './components/shell/PagePending.tsx';
 import { paramsOf, readableQuery } from './lib/url/params.ts';
 import { routeTree } from './routeTree.gen.ts';
 import './styles/app.css';
@@ -25,6 +26,14 @@ const router = createRouter({
   // A page's error shows inside the site's header and footer; the root route's own is only
   // for the frame itself failing.
   defaultErrorComponent: ErrorPage,
+  // A page with no data yet shows the frame and the busy indicator after a moment, rather than
+  // a blank window; timed with BusyIndicator's delays.
+  defaultPendingComponent: PagePending,
+  defaultPendingMs: 300,
+  defaultPendingMinMs: 400,
+  // A page whose URL state changed (a filter, a page of results) stays on screen, dimmed, while
+  // its loader fetches the new data, instead of showing the pending page (lib/route-search.ts).
+  defaultStaleReloadMode: 'blocking',
 });
 
 declare module '@tanstack/react-router' {

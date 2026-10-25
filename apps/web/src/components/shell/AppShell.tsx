@@ -1,5 +1,6 @@
 import { Outlet, useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
+import { BusyIndicator, useBusy } from './BusyIndicator.tsx';
 import { SiteFooter } from './SiteFooter.tsx';
 import { SiteHeader } from './SiteHeader.tsx';
 
@@ -26,6 +27,7 @@ function useFocusHeadingOnNavigate() {
 
 export function AppShell() {
   useFocusHeadingOnNavigate();
+  const { busy, slow } = useBusy();
   return (
     <div className="flex min-h-dvh flex-col">
       <a
@@ -35,9 +37,16 @@ export function AppShell() {
         Skip to main content
       </a>
       <SiteHeader />
-      <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">
+      {/* While busy, the content is out of date: dimmed, still readable and usable. */}
+      <main
+        id="main"
+        tabIndex={-1}
+        aria-busy={busy}
+        className={`flex-1 transition-opacity focus:outline-none ${busy ? 'opacity-60' : ''}`}
+      >
         <Outlet />
       </main>
+      <BusyIndicator busy={busy} slow={slow} />
       <SiteFooter />
     </div>
   );

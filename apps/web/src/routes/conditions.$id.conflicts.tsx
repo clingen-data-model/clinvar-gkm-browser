@@ -4,13 +4,19 @@ import {
   prefetchEntityConflicts,
 } from '../components/conflicts/EntityConflicts.tsx';
 import { ConflictSearch } from '../lib/conflicts.ts';
+import { searchOf } from '../lib/route-search.ts';
 
 /** Conflicts among the submissions for a condition. */
 export const Route = createFileRoute('/conditions/$id/conflicts')({
   validateSearch: ConflictSearch,
-  loaderDeps: ({ search }) => search,
-  loader: ({ context: { queryClient }, params, deps }) =>
-    prefetchEntityConflicts(queryClient, { condition: params.id }, deps),
+  // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
+  loader: ({ context: { queryClient }, params, location }) =>
+    prefetchEntityConflicts(
+      queryClient,
+      { condition: params.id },
+      searchOf(ConflictSearch, location),
+    ),
   component: ConditionConflicts,
 });
 

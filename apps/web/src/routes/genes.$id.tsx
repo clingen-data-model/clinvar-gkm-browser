@@ -1,23 +1,26 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
-import { z } from 'zod';
 import { RelationshipSelector } from '../components/gene/RelationshipSelector.tsx';
 import { Page } from '../components/shell/Page.tsx';
 import { PageTabs, pageTabClassName } from '../components/shell/PageTabs.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
 import { geneQuery, vocabulariesQuery } from '../lib/api/queries.ts';
-import { relationshipsOf } from '../lib/gene.ts';
+import { GeneSearch, relationshipsOf } from '../lib/gene.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
+import { searchOf } from '../lib/route-search.ts';
 
 /** A gene's page: the band, its relationship selector and tabs, with the tab's content below. */
 export const Route = createFileRoute('/genes/$id')({
   params: idParams,
-  validateSearch: z.object({ gene_relationship: z.string().optional().catch(undefined) }),
-  loaderDeps: ({ search }) => ({ relationships: relationshipsOf(search.gene_relationship) }),
-  loader: ({ context: { queryClient }, params, deps }) =>
+  validateSearch: GeneSearch,
+  // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
+  loader: ({ context: { queryClient }, params, location }) =>
     orNotFound(
       Promise.all([
-        queryClient.query(geneQuery(params.id, deps.relationships)),
+        queryClient.query(
+          geneQuery(params.id, relationshipsOf(searchOf(GeneSearch, location).gene_relationship)),
+        ),
         queryClient.query(vocabulariesQuery()),
       ]),
     ),
@@ -26,7 +29,7 @@ export const Route = createFileRoute('/genes/$id')({
 
 function GeneLayout() {
   const { id } = Route.useParams();
-  const { relationships } = Route.useLoaderDeps();
+  const relationships = relationshipsOf(Route.useSearch().gene_relationship);
   const gene = useSuspenseQuery(geneQuery(id, relationships)).data.data;
   // Tabs keep the relationship selection and drop the other tab's state.
   const keep = (s: { gene_relationship?: string | undefined }) => ({

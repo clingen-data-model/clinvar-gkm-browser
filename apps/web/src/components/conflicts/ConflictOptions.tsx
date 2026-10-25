@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { ConflictSearch } from '../../lib/conflicts.ts';
 
 const METHODS = [
@@ -25,7 +25,6 @@ function sideChanges(keys: SideKey[], value: string): Partial<Record<SideKey, st
 }
 
 interface Props {
-  search: ConflictSearch;
   /**
    * The two sides' labels ("Submissions from GeneDx", "Other submissions"); null for a view
    * without sides (a gene's or condition's conflicts), where one set of filters applies to both.
@@ -37,8 +36,11 @@ interface Props {
  * How submissions are compared: which conditions count as the same, whether flagged submissions
  * take part, and the review status and collection method of each side. All in the URL.
  */
-export function ConflictOptions({ search, sides }: Props) {
+export function ConflictOptions({ sides }: Props) {
   const navigate = useNavigate();
+  // The URL being loaded, not the page's settled one: a choice shows at once, while its data
+  // loads, instead of snapping back until it arrives.
+  const search = ConflictSearch.parse(useRouterState({ select: (s) => s.location.search }));
   const set = (changes: Partial<ConflictSearch>) => {
     void navigate({
       to: '.',

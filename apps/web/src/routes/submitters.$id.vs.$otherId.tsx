@@ -12,6 +12,7 @@ import {
   variantSummaryQuery,
   vocabulariesQuery,
 } from '../lib/api/queries.ts';
+import { searchOf } from '../lib/route-search.ts';
 import { comparisonParams, ConflictSearch, keepComparison, termOf } from '../lib/conflicts.ts';
 import { orNotFound } from '../lib/route-params.ts';
 
@@ -26,8 +27,10 @@ export const Route = createFileRoute('/submitters/$id/vs/$otherId')({
     stringify: ({ otherId }: { otherId: number }) => ({ otherId: String(otherId) }),
   },
   validateSearch: ConflictSearch,
-  loaderDeps: ({ search }) => search,
-  loader: ({ context: { queryClient }, params, deps }) => {
+  // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
+  loader: ({ context: { queryClient }, params, location }) => {
+    const deps = searchOf(ConflictSearch, location);
     const base = baseParams(params.id, params.otherId, deps);
     return orNotFound(
       Promise.all([
@@ -136,10 +139,7 @@ function HeadToHead() {
           </Link>
         </div>
       </div>
-      <ConflictOptions
-        search={search}
-        sides={[`Submissions from ${name}`, `Submissions from ${other}`]}
-      />
+      <ConflictOptions sides={[`Submissions from ${name}`, `Submissions from ${other}`]} />
       <Scorecard summary={scorecard} vocab={vocab} sharedOnly />
       <TermGrid summary={grid} vocab={vocab} sides={self ? null : [name, other]} selected={cell} />
       <PairList

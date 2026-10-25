@@ -42,6 +42,17 @@
   /* The page title in the band: large and light. */
   --text-band-title: clamp(2rem, 1.5rem + 2vw, 3rem);
   --text-band-title--line-height: 1.15;
+
+  /* The busy bar's sliver, sweeping across the top of the page (BusyIndicator). */
+  --animate-busy-sweep: busy-sweep 1.2s ease-in-out infinite;
+  @keyframes busy-sweep {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(300%);
+    }
+  }
 }
 
 /*

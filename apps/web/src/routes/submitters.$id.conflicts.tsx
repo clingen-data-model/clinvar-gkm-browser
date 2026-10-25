@@ -12,13 +12,16 @@ import {
   variantSummaryQuery,
   vocabulariesQuery,
 } from '../lib/api/queries.ts';
+import { searchOf } from '../lib/route-search.ts';
 import { comparisonParams, ConflictSearch, termOf } from '../lib/conflicts.ts';
 
 /** One lab against every other: its conflicts, its classifications against theirs, and the labs. */
 export const Route = createFileRoute('/submitters/$id/conflicts')({
   validateSearch: ConflictSearch,
-  loaderDeps: ({ search }) => search,
-  loader: async ({ context: { queryClient }, params, deps }) => {
+  // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
+  loader: async ({ context: { queryClient }, params, location }) => {
+    const deps = searchOf(ConflictSearch, location);
     const base = { 'a.submitter': params.id, ...comparisonParams(deps) };
     await Promise.all([
       queryClient.query(variantSummaryQuery({ ...base, group_by: 'conflict_level' })),
@@ -66,7 +69,7 @@ function SubmitterConflicts() {
   return (
     <>
       <title>{`${name}: conflicts | ClinVar GKM browser`}</title>
-      <ConflictOptions search={search} sides={[`Submissions from ${name}`, 'Other submissions']} />
+      <ConflictOptions sides={[`Submissions from ${name}`, 'Other submissions']} />
       <Scorecard summary={scorecard} vocab={vocab} singleLabel="Only this lab" />
       <TermGrid
         summary={grid}

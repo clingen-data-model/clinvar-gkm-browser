@@ -57,7 +57,7 @@ export function EntityConflicts({ filters, search }: { filters: Params; search: 
     code === undefined ? '' : (termOf(vocab, `PATH:${code}`)?.label ?? code);
   return (
     <>
-      <ConflictOptions search={search} sides={null} />
+      <ConflictOptions sides={null} />
       <Scorecard summary={scorecard} vocab={vocab} />
       <TermGrid
         summary={grid}

@@ -144,3 +144,22 @@ test('the Overview tab stays current while paging', async ({ page }) => {
     'page',
   );
 });
+
+test('a slow reload keeps the page, dimmed, with a loading indicator', async ({ page }) => {
+  await page.goto('/genes/3077/conflicts');
+  await expect(page.getByRole('heading', { name: 'Conflicts', level: 2 })).toBeVisible();
+  // Hold the next scorecard request for a second.
+  await page.route('**/api/v1/variants/summary**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.continue();
+  });
+  await page.getByRole('combobox', { name: 'Conditions' }).selectOption('any');
+  const status = page.locator('main ~ div[role=status], div[role=status].fixed');
+  await expect(status).toHaveText('Loading…');
+  await expect(page.locator('main')).toHaveAttribute('aria-busy', 'true');
+  // The old content stays, and the new choice shows at once.
+  await expect(page.getByRole('heading', { name: 'Conflicts', level: 2 })).toBeVisible();
+  await expect(page.getByRole('combobox', { name: 'Conditions' })).toHaveValue('any');
+  await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false');
+  await expect(status).toHaveText('');
+});
