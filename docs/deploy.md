@@ -16,7 +16,7 @@ One image holds the server, the built web app and one derived release (`deploy/D
 1. **Build** for linux/amd64 (Cloud Run's platform) on the Mac. The web app builds natively; only the dependency install runs under emulation.
 
    ```sh
-   podman build --platform linux/amd64 -f deploy/Dockerfile \
+   podman build --platform linux/amd64 --pull=always -f deploy/Dockerfile \
      --build-arg RELEASE=2026-10-18 -t clinvar-gkm-browser:2026-10-18 .
    ```
 
