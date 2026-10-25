@@ -129,7 +129,8 @@ DROP TABLE stage.variation;
 -- Conditions and therapies -----------------------------------------------------------------------
 
 INSERT INTO condition
-SELECT id_int(id), name, conceptType, primaryCoding.code, aliases
+SELECT id_int(id), name, conceptType, primaryCoding.code, aliases,
+       lower(name) IN ('not provided', 'not specified')
 FROM read_parquet(src_file('condition.parquet'))
 ORDER BY 1;
 
@@ -159,6 +160,13 @@ UNION
 SELECT m.condition_set_key, n.condition_id
 FROM condition_set_member m JOIN condition_set_member n ON n.condition_set_key = m.member_set_key
 WHERE n.condition_id IS NOT NULL;
+
+-- Each set's conditions as a list, and whether they're all placeholders, for scv.condition_ids.
+CREATE TABLE stage.set_conditions AS
+SELECT x.condition_set_key, list(x.condition_id ORDER BY x.condition_id) AS ids,
+       bool_and(c.placeholder) AS unspecified
+FROM stage.condition_set_condition x JOIN condition c ON c.condition_id = x.condition_id
+GROUP BY 1;
 
 INSERT INTO therapy
 SELECT key, name FROM read_parquet(src_file('therapy.parquet'));
@@ -317,6 +325,8 @@ SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification
        p.predicate,
        CASE WHEN p.object_type = 'condition' THEN id_int(p.object_id) END,
        cs.condition_set_key,
+       CASE WHEN p.object_type = 'condition' THEN [id_int(p.object_id)] ELSE coalesce(sc.ids, []) END,
+       coalesce(CASE WHEN p.object_type = 'condition' THEN oc.placeholder ELSE sc.unspecified END, false),
        p.mode_of_inheritance,
        p.penetrance,
        id_int(p.gene_context_id),
@@ -331,6 +341,8 @@ LEFT JOIN classification_term ct
     ON ct.classification_type = s.classification_type AND ct.source_code = lower(s.classification_code)
 -- CASE keeps this an equi-join; with AND in ON, DuckDB plans a nested loop (10 minutes here).
 LEFT JOIN condition_set cs ON cs.condition_set_id = CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END
+LEFT JOIN stage.set_conditions sc ON sc.condition_set_key = cs.condition_set_key
+LEFT JOIN condition oc ON oc.condition_id = CASE WHEN p.object_type = 'condition' THEN id_int(p.object_id) END
 LEFT JOIN stage.scv_citing v ON v.tree = 'vcv' AND v.scv_statement_id = s.scv_statement_id
 LEFT JOIN stage.scv_citing r ON r.tree = 'rcv' AND r.scv_statement_id = s.scv_statement_id
 ORDER BY p.variation_id, s.scv_id;

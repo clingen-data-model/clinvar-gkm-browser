@@ -291,7 +291,9 @@ CREATE TABLE condition (
     name          VARCHAR NOT NULL,
     concept_type  VARCHAR NOT NULL,     -- Disease, Phenotype, Trait, Condition
     medgen_id     VARCHAR,              -- MedGen CUI; NULL for 10.6k traits
-    aliases       VARCHAR[]
+    aliases       VARCHAR[],
+    -- "not provided" or "not specified": a placeholder, not a condition (docs/data.md#conflicts).
+    placeholder   BOOLEAN NOT NULL
 );
 
 -- MONDO, OMIM, Orphanet, HPO, ... mappings of a condition.
@@ -433,6 +435,10 @@ CREATE TABLE scv (
     predicate               VARCHAR NOT NULL,
     condition_id            INTEGER REFERENCES condition (condition_id),
     condition_set_key       INTEGER REFERENCES condition_set (condition_set_key),
+    -- Every condition the SCV is about, sets expanded (as scv_condition), for matching the
+    -- conditions of two SCVs cheaply; and whether all of them are placeholders.
+    condition_ids           INTEGER[] NOT NULL,
+    condition_unspecified   BOOLEAN NOT NULL,
     mode_of_inheritance     VARCHAR,
     penetrance              VARCHAR,
     -- REFERENCES gene (gene_id) NOT ENFORCED: upstream names genes its gene table lacks

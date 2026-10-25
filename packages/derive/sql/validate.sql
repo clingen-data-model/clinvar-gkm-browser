@@ -51,6 +51,14 @@ INSERT INTO validation_problem
 SELECT 'scv without condition', s.scv_id::VARCHAR
 FROM scv s ANTI JOIN scv_condition c ON c.scv_id = s.scv_id;
 
+-- scv.condition_ids lists exactly the SCV's rows in scv_condition.
+INSERT INTO validation_problem
+SELECT 'scv condition_ids disagree with scv_condition', s.scv_id::VARCHAR
+FROM scv s
+LEFT JOIN (SELECT scv_id, list(condition_id ORDER BY condition_id) AS ids FROM scv_condition GROUP BY 1) c
+  ON c.scv_id = s.scv_id
+WHERE list_sort(s.condition_ids) IS DISTINCT FROM coalesce(c.ids, []);
+
 -- Every variant with VCV statements got its version.
 INSERT INTO validation_problem
 SELECT 'variant missing vcv_version', variation_id::VARCHAR
