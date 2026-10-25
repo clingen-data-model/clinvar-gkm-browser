@@ -1,7 +1,11 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
+import { createFileRoute, Link, Outlet, useMatchRoute } from '@tanstack/react-router';
 import { Page } from '../components/shell/Page.tsx';
-import { PageTabs, pageTabClassName } from '../components/shell/PageTabs.tsx';
+import {
+  PageTabs,
+  pageTabActiveClassName,
+  pageTabClassName,
+} from '../components/shell/PageTabs.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
 import { submitterQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
@@ -22,6 +26,8 @@ export const Route = createFileRoute('/submitters/$id')({
 function SubmitterLayout() {
   const { id } = Route.useParams();
   const submitter = useSuspenseQuery(submitterQuery(id)).data.data;
+  // A head-to-head is part of the Conflicts tab, though not its route.
+  const headToHead = useMatchRoute()({ to: '/submitters/$id/vs/$otherId', fuzzy: true }) !== false;
   return (
     <Page
       eyebrow="Submitter"
@@ -47,14 +53,19 @@ function SubmitterLayout() {
               <Link
                 to="/submitters/$id"
                 params={{ id }}
-                activeOptions={{ exact: true }}
+                activeOptions={{ exact: true, includeSearch: false }}
                 className={pageTabClassName}
               >
                 Overview
               </Link>
             </li>
             <li>
-              <Link to="/submitters/$id/conflicts" params={{ id }} className={pageTabClassName}>
+              <Link
+                to="/submitters/$id/conflicts"
+                params={{ id }}
+                className={`${pageTabClassName} ${headToHead ? pageTabActiveClassName : ''}`}
+                aria-current={headToHead ? 'page' : undefined}
+              >
                 Conflicts
               </Link>
             </li>

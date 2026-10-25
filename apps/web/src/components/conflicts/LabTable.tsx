@@ -4,6 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import type { Params } from '../../lib/api/client.ts';
 import { pairSummaryQuery } from '../../lib/api/queries.ts';
+import { keepComparison } from '../../lib/conflicts.ts';
 import { count } from '../../lib/text.ts';
 
 export const LABS_PER_PAGE = 20;
@@ -21,9 +22,13 @@ export function labTableParams(base: Params, page: number, q: string | undefined
   };
 }
 
-/** Per-lab totals for the page's labs: conflicting variants, and all shared variants. */
-export function labTotalsParams(base: Params, levels: SummaryResponse): [Params, Params] {
+/**
+ * Per-lab totals for the page's labs: conflicting variants, and all shared variants. None when
+ * the page has no labs (a lab search that matched nothing).
+ */
+export function labTotalsParams(base: Params, levels: SummaryResponse): Params[] {
   const labs = [...new Set(levels.rows.map((r) => String(r['b.submitter'])))];
+  if (labs.length === 0) return [];
   const perLab = (min: string | undefined) => ({
     ...base,
     'b.submitter': labs.join(','),
@@ -55,8 +60,7 @@ export function LabTable({ base, submitterId, page, q }: Props) {
   const labs = [...new Set(levels.rows.map((r) => String(r['b.submitter'])))];
   const [conflicting, shared] = useSuspenseQueries({
     queries: labTotalsParams(base, levels).map((p) => pairSummaryQuery(p)),
-  }).map((q) => q.data);
-  if (conflicting === undefined || shared === undefined) return null;
+  }).map((q) => q.data.rows);
   const valueOf = (rows: typeof levels.rows, lab: string, level?: string) =>
     Number(
       rows.find(
@@ -79,6 +83,7 @@ export function LabTable({ base, submitterId, page, q }: Props) {
       </p>
       <form
         role="search"
+        aria-label="Labs"
         className="mb-3"
         onSubmit={(e) => {
           e.preventDefault();
@@ -117,14 +122,16 @@ export function LabTable({ base, submitterId, page, q }: Props) {
           </thead>
           <tbody>
             {labs.map((lab) => {
-              const sharedN = valueOf(shared.rows, lab);
-              const conflictN = valueOf(conflicting.rows, lab);
+              const sharedN = valueOf(shared ?? [], lab);
+              const conflictN = valueOf(conflicting ?? [], lab);
               return (
                 <tr key={lab} className="border-b border-border">
                   <td className="py-2 pr-3">
                     <Link
                       to="/submitters/$id/vs/$otherId"
                       params={{ id: submitterId, otherId: Number(lab) }}
+
+                      search={keepComparison}
                     >
                       {names[lab] ?? `Submitter ${lab}`}
                     </Link>

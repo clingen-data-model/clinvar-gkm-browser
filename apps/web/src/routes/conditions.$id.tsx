@@ -65,7 +65,7 @@ function ConditionLayout() {
               <Link
                 to="/conditions/$id"
                 params={{ id }}
-                activeOptions={{ exact: true }}
+                activeOptions={{ exact: true, includeSearch: false }}
                 className={pageTabClassName}
               >
                 Overview

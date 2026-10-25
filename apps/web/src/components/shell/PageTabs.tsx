@@ -18,3 +18,7 @@ export const pageTabClassName =
   'text-band-foreground no-underline hover:bg-band-foreground/10 ' +
   'data-[status=active]:border-tab-indicator data-[status=active]:bg-background ' +
   'data-[status=active]:text-link data-[status=active]:hover:bg-background';
+
+/** The active tab's look, for a tab that is current without its route matching. */
+export const pageTabActiveClassName =
+  'border-tab-indicator bg-background text-link hover:bg-background';

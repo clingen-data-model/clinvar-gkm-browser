@@ -41,6 +41,21 @@ export function comparisonParams(search: ConflictSearch): Params {
   };
 }
 
+/**
+ * For links between conflict views of the same comparison (the lab table and a head-to-head):
+ * keep the comparison options, drop paging and drill-downs, which belong to one view.
+ */
+export function keepComparison(search: ConflictSearch): ConflictSearch {
+  return {
+    condition_match: search.condition_match,
+    flagged: search.flagged,
+    'a.min_stars': search['a.min_stars'],
+    'b.min_stars': search['b.min_stars'],
+    'a.method': search['a.method'],
+    'b.method': search['b.method'],
+  };
+}
+
 type Term = Vocabularies['terms'][number];
 
 /** A term grid key, `PATH:lp`, to its term. */

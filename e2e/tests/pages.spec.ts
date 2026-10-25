@@ -4,8 +4,10 @@ import { axe } from './axe.ts';
 test('home searches by gene and lands on the gene page', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Browse ClinVar by submission');
-  await page.getByRole('searchbox', { name: 'Search ClinVar' }).fill('HFE');
-  await page.getByRole('searchbox', { name: 'Search ClinVar' }).press('Enter');
+  // The home page's own box, under the header's.
+  const box = page.getByRole('searchbox', { name: 'Search ClinVar' }).last();
+  await box.fill('HFE');
+  await box.press('Enter');
   await expect(page).toHaveURL(/\/search\?q=HFE/);
   await page.getByRole('link', { name: 'HFE', exact: true }).click();
   await expect(page).toHaveURL(/\/genes\/3077$/);
@@ -116,4 +118,29 @@ test('numeric query values survive in the URL and the page', async ({ page }) =>
   // A variation ID goes straight to its variant, rather than an empty search.
   await page.goto('/search?q=17661');
   await expect(page).toHaveURL(/\/variants\/17661$/);
+});
+
+test('the header search box follows the URL, and filters reset every list page', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const box = page.getByRole('search', { name: 'ClinVar' }).first().getByRole('searchbox');
+  await box.fill('HFE');
+  await box.press('Enter');
+  await expect(page).toHaveURL(/\/search\?q=HFE/);
+  await page.getByRole('link', { name: 'ClinVar GKM browser' }).click();
+  await expect(page.getByRole('searchbox').first()).toHaveValue('');
+
+  await page.goto('/genes/3077/conflicts?variants_page=2&pairs_page=2');
+  await page.getByRole('combobox', { name: 'Collection method' }).selectOption('curation');
+  await expect(page).toHaveURL(/a\.method=curation/);
+  expect(page.url()).not.toMatch(/_page=/);
+});
+
+test('the Overview tab stays current while paging', async ({ page }) => {
+  await page.goto('/genes/3077?page=2');
+  await expect(page.getByRole('link', { name: 'Overview' })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
 });

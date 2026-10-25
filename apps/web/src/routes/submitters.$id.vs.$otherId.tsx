@@ -12,7 +12,7 @@ import {
   variantSummaryQuery,
   vocabulariesQuery,
 } from '../lib/api/queries.ts';
-import { comparisonParams, ConflictSearch, termOf } from '../lib/conflicts.ts';
+import { comparisonParams, ConflictSearch, keepComparison, termOf } from '../lib/conflicts.ts';
 import { orNotFound } from '../lib/route-params.ts';
 
 /** Two labs head to head: where they overlap, how their classifications compare, and the pairs. */
@@ -36,7 +36,11 @@ export const Route = createFileRoute('/submitters/$id/vs/$otherId')({
         queryClient.query(pairSummaryQuery(gridParams(base))),
         queryClient.query(
           pairListQuery(
-            pairListParams(pairParams(base, deps), deps.pairs_page ?? 1, deps.show !== 'all'),
+            pairListParams(
+              pairParams(base, deps, params.id === params.otherId),
+              deps.pairs_page ?? 1,
+              deps.show !== 'all',
+            ),
           ),
         ),
       ]),
@@ -59,8 +63,23 @@ function gridParams(base: Record<string, string | number | undefined>) {
   return { ...base, group_by: 'a.term,b.term', measure: 'variants', limit: 500 };
 }
 
-function pairParams(base: Record<string, string | number | undefined>, search: ConflictSearch) {
-  return { ...base, 'a.term': search['a.term'], 'b.term': search['b.term'] };
+/**
+ * The pair list's filters: the grid cell selected, if any. A lab compared with itself has no
+ * sides, so its grid's cells mean a pair of terms in either order (`terms`).
+ */
+function pairParams(
+  base: Record<string, string | number | undefined>,
+  search: ConflictSearch,
+  self: boolean,
+) {
+  return self
+    ? { ...base, terms: search.terms }
+    : { ...base, 'a.term': search['a.term'], 'b.term': search['b.term'] };
+}
+
+function selectedCell(search: ConflictSearch, self: boolean): [string, string] | null {
+  const [a, b] = self ? (search.terms?.split(',') ?? []) : [search['a.term'], search['b.term']];
+  return a === undefined || b === undefined ? null : [a, b];
 }
 
 function HeadToHead() {
@@ -74,12 +93,9 @@ function HeadToHead() {
     variantSummaryQuery({ ...base, group_by: 'conflict_level' }),
   ).data;
   const grid = useSuspenseQuery(pairSummaryQuery(gridParams(base))).data;
-  const cell =
-    search['a.term'] !== undefined && search['b.term'] !== undefined
-      ? ([search['a.term'], search['b.term']] as const)
-      : null;
-  const cellLabel = (code: string) => termOf(vocab, `PATH:${code}`)?.label ?? code;
   const self = id === otherId;
+  const cell = selectedCell(search, self);
+  const cellLabel = (code: string) => termOf(vocab, `PATH:${code}`)?.label ?? code;
   return (
     <>
       <title>{`${name} vs ${other} | ClinVar GKM browser`}</title>
@@ -115,7 +131,7 @@ function HeadToHead() {
               <ArrowLeftRight aria-hidden="true" className="size-4" /> Swap sides
             </Link>
           )}
-          <Link to="/submitters/$id/conflicts" params={{ id }}>
+          <Link to="/submitters/$id/conflicts" params={{ id }} search={keepComparison}>
             All labs
           </Link>
         </div>
@@ -125,14 +141,9 @@ function HeadToHead() {
         sides={[`Submissions from ${name}`, `Submissions from ${other}`]}
       />
       <Scorecard summary={scorecard} vocab={vocab} sharedOnly />
-      <TermGrid
-        summary={grid}
-        vocab={vocab}
-        sides={self ? null : [name, other]}
-        selected={cell === null ? null : [cell[0], cell[1]]}
-      />
+      <TermGrid summary={grid} vocab={vocab} sides={self ? null : [name, other]} selected={cell} />
       <PairList
-        params={pairParams(base, search)}
+        params={pairParams(base, search, self)}
         page={search.pairs_page ?? 1}
         conflictsOnly={search.show !== 'all'}
         vocab={vocab}
@@ -143,7 +154,7 @@ function HeadToHead() {
             ? undefined
             : {
                 label: `${cellLabel(cell[0])} vs ${cellLabel(cell[1])}`,
-                clear: { 'a.term': undefined, 'b.term': undefined },
+                clear: self ? { terms: undefined } : { 'a.term': undefined, 'b.term': undefined },
               }
         }
       />

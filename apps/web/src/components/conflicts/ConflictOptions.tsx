@@ -42,7 +42,13 @@ export function ConflictOptions({ search, sides }: Props) {
   const set = (changes: Partial<ConflictSearch>) => {
     void navigate({
       to: '.',
-      search: (s) => ({ ...s, ...changes, labs_page: undefined, pairs_page: undefined }),
+      search: (s) => ({
+        ...s,
+        ...changes,
+        labs_page: undefined,
+        pairs_page: undefined,
+        variants_page: undefined,
+      }),
       replace: true,
     });
   };
