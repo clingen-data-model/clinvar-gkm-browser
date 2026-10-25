@@ -31,8 +31,8 @@ export const SummaryResponse = z.object({
   totals: z.record(z.string(), z.number()),
   page: Page,
   /**
-   * Pairs and variants: flagged SCVs (on side A) left out of the comparison, so a page can say
-   * so (flagged=exclude, the default). Null where nothing was left out or it doesn't apply.
+   * Pairs and variants: flagged SCVs left out of the comparison (flagged=exclude, the default):
+   * side A's, and side B's on side A's variants. Null where none were or it doesn't apply.
    */
   flaggedExcluded: z.int().nullable(),
 });

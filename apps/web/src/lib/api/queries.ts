@@ -4,6 +4,7 @@
 import {
   ConditionDetail,
   GeneDetail,
+  PairRow,
   ReleaseList,
   ScvDetail,
   ScvRow,
@@ -11,6 +12,7 @@ import {
   SubmitterDetail,
   SummaryResponse,
   VariantDetail,
+  VariantRow,
   Vocabularies,
   item,
   list,
@@ -102,5 +104,33 @@ export const scvSummaryQuery = (params: Params) =>
   queryOptions({
     queryKey: ['scvs', 'summary', params],
     queryFn: () => getJson('/scvs/summary', SummaryResponse, params),
+    ...forever,
+  });
+
+export const pairSummaryQuery = (params: Params) =>
+  queryOptions({
+    queryKey: ['scv-pairs', 'summary', params],
+    queryFn: () => getJson('/scv-pairs/summary', SummaryResponse, params),
+    ...forever,
+  });
+
+export const variantSummaryQuery = (params: Params) =>
+  queryOptions({
+    queryKey: ['variants', 'summary', params],
+    queryFn: () => getJson('/variants/summary', SummaryResponse, params),
+    ...forever,
+  });
+
+export const pairListQuery = (params: Params) =>
+  queryOptions({
+    queryKey: ['scv-pairs', params],
+    queryFn: () => getJson('/scv-pairs', list(PairRow), params),
+    ...forever,
+  });
+
+export const variantListQuery = (params: Params) =>
+  queryOptions({
+    queryKey: ['variants', params],
+    queryFn: () => getJson('/variants', list(VariantRow), params),
     ...forever,
   });

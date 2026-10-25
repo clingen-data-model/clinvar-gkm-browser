@@ -62,7 +62,10 @@ export async function summarize(
   return { dimensions, rows, totals: cleanTotals, page, flaggedExcluded };
 }
 
-/** Flagged SCVs on side A that a pair or variant summary left out of its comparison. */
+/**
+ * Flagged SCVs a pair or variant summary left out of its comparison: side A's, and side B's on
+ * the variants side A covers (the ones they would have been compared with).
+ */
 async function countFlaggedExcluded(
   db: Database,
   release: string,
@@ -73,8 +76,11 @@ async function countFlaggedExcluded(
   const rows = await db.query(
     release,
     `SELECT count(*)::INTEGER AS n FROM scv s
-     WHERE ${whereSql(query, params, 'a')} AND s.submission_level = 'FLAG'
-       AND s.classification_type IN (SELECT code FROM classification_type WHERE conflict_detectable)`,
+     WHERE s.submission_level = 'FLAG'
+       AND s.classification_type IN (SELECT code FROM classification_type WHERE conflict_detectable)
+       AND ((${whereSql(query, params, 'a')})
+         OR ((${whereSql(query, params, 'b')})
+           AND s.variation_id IN (SELECT s.variation_id FROM scv s WHERE ${whereSql(query, params, 'a')})))`,
     params.values,
   );
   const n = z.object({ n: z.int() }).parse(rows[0]).n;

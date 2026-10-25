@@ -1,34 +1,27 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
-import { ClassificationCounts } from '../components/classification/ClassificationCounts.tsx';
-import { ScvListSection, scvListParams } from '../components/scv/ScvListSection.tsx';
+import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { Page } from '../components/shell/Page.tsx';
+import { PageTabs, pageTabClassName } from '../components/shell/PageTabs.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
-import { conditionQuery, scvListQuery, vocabulariesQuery } from '../lib/api/queries.ts';
-import { PageSearch } from '../lib/page-search.ts';
+import { conditionQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
-import { useTypeLabels } from '../lib/vocabulary.ts';
 
+/** A condition's page: the band and its tabs, with the tab's content below. */
 export const Route = createFileRoute('/conditions/$id')({
   params: idParams,
-  validateSearch: PageSearch,
-  loaderDeps: ({ search }) => ({ page: search.page ?? 1 }),
-  loader: ({ context: { queryClient }, params, deps }) =>
+  loader: ({ context: { queryClient }, params }) =>
     orNotFound(
       Promise.all([
         queryClient.query(conditionQuery(params.id)),
-        queryClient.query(scvListQuery(scvListParams({ condition: params.id }, deps.page))),
         queryClient.query(vocabulariesQuery()),
       ]),
     ),
-  component: ConditionPage,
+  component: ConditionLayout,
 });
 
-function ConditionPage() {
+function ConditionLayout() {
   const { id } = Route.useParams();
-  const { page } = Route.useLoaderDeps();
   const condition = useSuspenseQuery(conditionQuery(id)).data.data;
-  const typeLabels = useTypeLabels();
   return (
     <Page
       eyebrow="Condition"
@@ -44,34 +37,50 @@ function ConditionPage() {
         )
       }
       band={
-        <Facts
-          items={[
-            ['Variants', condition.variantCount.toLocaleString()],
-            ['Submissions', condition.scvCount.toLocaleString()],
-            ...condition.xrefs
-              .filter(
-                (x) =>
-                  x.system.includes('mondo') ||
-                  x.system.includes('omim.org/') ||
-                  x.system.includes('orpha'),
-              )
-              .slice(0, 4)
-              .map((x): [string, string] => [
-                x.system.includes('mondo')
-                  ? 'MONDO'
-                  : x.system.includes('orpha')
-                    ? 'Orphanet'
-                    : 'OMIM',
-                x.code,
-              ]),
-          ]}
-        />
+        <>
+          <Facts
+            items={[
+              ['Variants', condition.variantCount.toLocaleString()],
+              ['Submissions', condition.scvCount.toLocaleString()],
+              ...condition.xrefs
+                .filter(
+                  (x) =>
+                    x.system.includes('mondo') ||
+                    x.system.includes('omim.org/') ||
+                    x.system.includes('orpha'),
+                )
+                .slice(0, 4)
+                .map((x): [string, string] => [
+                  x.system.includes('mondo')
+                    ? 'MONDO'
+                    : x.system.includes('orpha')
+                      ? 'Orphanet'
+                      : 'OMIM',
+                  x.code,
+                ]),
+            ]}
+          />
+          <PageTabs label="Condition sections">
+            <li>
+              <Link
+                to="/conditions/$id"
+                params={{ id }}
+                activeOptions={{ exact: true }}
+                className={pageTabClassName}
+              >
+                Overview
+              </Link>
+            </li>
+            <li>
+              <Link to="/conditions/$id/conflicts" params={{ id }} className={pageTabClassName}>
+                Conflicts
+              </Link>
+            </li>
+          </PageTabs>
+        </>
       }
     >
-      <section className="mb-10">
-        <ClassificationCounts counts={condition.classifications} typeLabels={typeLabels} />
-      </section>
-      <ScvListSection filters={{ condition: id }} page={page} />
+      <Outlet />
     </Page>
   );
 }

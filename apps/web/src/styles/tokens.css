@@ -45,6 +45,18 @@
   --bucket-o: light-dark(oklch(44.6% 0.043 257.281), oklch(86.9% 0.022 252.894));
   --bucket-n: light-dark(oklch(55.1% 0.027 264.364), oklch(70.7% 0.022 261.325));
   --bucket-foreground: light-dark(oklch(100% 0 0), oklch(21% 0.034 264.665));
+  /*
+   * Conflict levels, as cell backgrounds under normal text: agreement green, confidence yellow,
+   * benign vs uncertain orange, clinically significant red, nothing to compare grey. Pale in
+   * light mode and deep in dark mode, so body text stays above 4.5:1 on each.
+   */
+  --level-single: light-dark(oklch(96.7% 0.003 264.542), oklch(26% 0.015 260));
+  --level-0: light-dark(oklch(96.2% 0.044 156.743), oklch(30% 0.06 155));
+  --level-1: light-dark(oklch(96.7% 0.067 122.328), oklch(31% 0.06 125));
+  --level-2: light-dark(oklch(97.3% 0.071 103.193), oklch(32% 0.06 100));
+  --level-3: light-dark(oklch(95.4% 0.038 75.164), oklch(32% 0.07 60));
+  --level-5: light-dark(oklch(93.6% 0.032 17.717), oklch(32% 0.09 25));
+
   /* Stars: amber, decorative beside the review status text. */
   --star: light-dark(oklch(66.6% 0.179 58.318), oklch(82.8% 0.189 84.429));
 }

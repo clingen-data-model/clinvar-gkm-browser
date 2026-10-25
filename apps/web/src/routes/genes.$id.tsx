@@ -1,49 +1,37 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
-import { ClassificationCounts } from '../components/classification/ClassificationCounts.tsx';
-import { ScvListSection, scvListParams } from '../components/scv/ScvListSection.tsx';
-import { Page } from '../components/shell/Page.tsx';
-import { Facts } from '../components/ui/Facts.tsx';
-import { geneQuery, scvListQuery, vocabulariesQuery } from '../lib/api/queries.ts';
-import { PageSearch } from '../lib/page-search.ts';
-import { RelationshipSelector } from '../components/gene/RelationshipSelector.tsx';
-import { parseGeneRelationships } from '@cvb/shared/query';
+import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { z } from 'zod';
+import { RelationshipSelector } from '../components/gene/RelationshipSelector.tsx';
+import { Page } from '../components/shell/Page.tsx';
+import { PageTabs, pageTabClassName } from '../components/shell/PageTabs.tsx';
+import { Facts } from '../components/ui/Facts.tsx';
+import { geneQuery, vocabulariesQuery } from '../lib/api/queries.ts';
+import { relationshipsOf } from '../lib/gene.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
-import { useTypeLabels } from '../lib/vocabulary.ts';
 
+/** A gene's page: the band, its relationship selector and tabs, with the tab's content below. */
 export const Route = createFileRoute('/genes/$id')({
   params: idParams,
-  validateSearch: PageSearch.extend({ gene_relationship: z.string().optional().catch(undefined) }),
-  loaderDeps: ({ search }) => {
-    const parsed = parseGeneRelationships(search.gene_relationship);
-    return {
-      page: search.page ?? 1,
-      relationships: parsed.ok ? parsed.value : ['single', 'overlap'],
-    };
-  },
+  validateSearch: z.object({ gene_relationship: z.string().optional().catch(undefined) }),
+  loaderDeps: ({ search }) => ({ relationships: relationshipsOf(search.gene_relationship) }),
   loader: ({ context: { queryClient }, params, deps }) =>
     orNotFound(
       Promise.all([
         queryClient.query(geneQuery(params.id, deps.relationships)),
-        queryClient.query(
-          scvListQuery(scvListParams(geneFilters(params.id, deps.relationships), deps.page)),
-        ),
         queryClient.query(vocabulariesQuery()),
       ]),
     ),
-  component: GenePage,
+  component: GeneLayout,
 });
 
-function geneFilters(id: number, relationships: readonly string[]) {
-  return { gene: id, gene_relationship: relationships.join(',') };
-}
-
-function GenePage() {
+function GeneLayout() {
   const { id } = Route.useParams();
-  const { page, relationships } = Route.useLoaderDeps();
+  const { relationships } = Route.useLoaderDeps();
   const gene = useSuspenseQuery(geneQuery(id, relationships)).data.data;
-  const typeLabels = useTypeLabels();
+  // Tabs keep the relationship selection and drop the other tab's state.
+  const keep = (s: { gene_relationship?: string | undefined }) => ({
+    gene_relationship: s.gene_relationship,
+  });
   return (
     <Page
       eyebrow="Gene"
@@ -69,13 +57,34 @@ function GenePage() {
             counts={gene.relationshipCounts}
             selected={gene.relationships}
           />
+          <PageTabs label="Gene sections">
+            <li>
+              <Link
+                to="/genes/$id"
+                params={{ id }}
+                search={keep}
+                activeOptions={{ exact: true, includeSearch: false }}
+                className={pageTabClassName}
+              >
+                Overview
+              </Link>
+            </li>
+            <li>
+              <Link
+                to="/genes/$id/conflicts"
+                params={{ id }}
+                search={keep}
+                activeOptions={{ includeSearch: false }}
+                className={pageTabClassName}
+              >
+                Conflicts
+              </Link>
+            </li>
+          </PageTabs>
         </div>
       }
     >
-      <section className="mb-10">
-        <ClassificationCounts counts={gene.classifications} typeLabels={typeLabels} />
-      </section>
-      <ScvListSection filters={geneFilters(id, relationships)} page={page} />
+      <Outlet />
     </Page>
   );
 }

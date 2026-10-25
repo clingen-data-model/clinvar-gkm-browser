@@ -1,34 +1,27 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
-import { ClassificationCounts } from '../components/classification/ClassificationCounts.tsx';
-import { ScvListSection, scvListParams } from '../components/scv/ScvListSection.tsx';
+import { createFileRoute, Link, Outlet } from '@tanstack/react-router';
 import { Page } from '../components/shell/Page.tsx';
+import { PageTabs, pageTabClassName } from '../components/shell/PageTabs.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
-import { submitterQuery, scvListQuery, vocabulariesQuery } from '../lib/api/queries.ts';
-import { PageSearch } from '../lib/page-search.ts';
+import { submitterQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
-import { useTypeLabels } from '../lib/vocabulary.ts';
 
+/** A submitter's page: the band and its tabs, with the tab's content below. */
 export const Route = createFileRoute('/submitters/$id')({
   params: idParams,
-  validateSearch: PageSearch,
-  loaderDeps: ({ search }) => ({ page: search.page ?? 1 }),
-  loader: ({ context: { queryClient }, params, deps }) =>
+  loader: ({ context: { queryClient }, params }) =>
     orNotFound(
       Promise.all([
         queryClient.query(submitterQuery(params.id)),
-        queryClient.query(scvListQuery(scvListParams({ submitter: params.id }, deps.page))),
         queryClient.query(vocabulariesQuery()),
       ]),
     ),
-  component: SubmitterPage,
+  component: SubmitterLayout,
 });
 
-function SubmitterPage() {
+function SubmitterLayout() {
   const { id } = Route.useParams();
-  const { page } = Route.useLoaderDeps();
   const submitter = useSuspenseQuery(submitterQuery(id)).data.data;
-  const typeLabels = useTypeLabels();
   return (
     <Page
       eyebrow="Submitter"
@@ -42,18 +35,34 @@ function SubmitterPage() {
         </a>
       }
       band={
-        <Facts
-          items={[
-            ['Variants', submitter.variantCount.toLocaleString()],
-            ['Submissions', submitter.scvCount.toLocaleString()],
-          ]}
-        />
+        <>
+          <Facts
+            items={[
+              ['Variants', submitter.variantCount.toLocaleString()],
+              ['Submissions', submitter.scvCount.toLocaleString()],
+            ]}
+          />
+          <PageTabs label="Submitter sections">
+            <li>
+              <Link
+                to="/submitters/$id"
+                params={{ id }}
+                activeOptions={{ exact: true }}
+                className={pageTabClassName}
+              >
+                Overview
+              </Link>
+            </li>
+            <li>
+              <Link to="/submitters/$id/conflicts" params={{ id }} className={pageTabClassName}>
+                Conflicts
+              </Link>
+            </li>
+          </PageTabs>
+        </>
       }
     >
-      <section className="mb-10">
-        <ClassificationCounts counts={submitter.classifications} typeLabels={typeLabels} />
-      </section>
-      <ScvListSection filters={{ submitter: id }} page={page} />
+      <Outlet />
     </Page>
   );
 }

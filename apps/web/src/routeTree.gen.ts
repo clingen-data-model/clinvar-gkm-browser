@@ -16,6 +16,13 @@ import { Route as GenesIdRouteImport } from './routes/genes.$id'
 import { Route as ScvsIdRouteImport } from './routes/scvs.$id'
 import { Route as SubmittersIdRouteImport } from './routes/submitters.$id'
 import { Route as VariantsIdRouteImport } from './routes/variants.$id'
+import { Route as ConditionsIdIndexRouteImport } from './routes/conditions.$id.index'
+import { Route as ConditionsIdConflictsRouteImport } from './routes/conditions.$id.conflicts'
+import { Route as GenesIdIndexRouteImport } from './routes/genes.$id.index'
+import { Route as GenesIdConflictsRouteImport } from './routes/genes.$id.conflicts'
+import { Route as SubmittersIdIndexRouteImport } from './routes/submitters.$id.index'
+import { Route as SubmittersIdConflictsRouteImport } from './routes/submitters.$id.conflicts'
+import { Route as SubmittersIdVsOtherIdRouteImport } from './routes/submitters.$id.vs.$otherId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,34 +59,87 @@ const VariantsIdRoute = VariantsIdRouteImport.update({
   path: '/variants/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConditionsIdIndexRoute = ConditionsIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ConditionsIdRoute,
+} as any)
+const ConditionsIdConflictsRoute = ConditionsIdConflictsRouteImport.update({
+  id: '/conflicts',
+  path: '/conflicts',
+  getParentRoute: () => ConditionsIdRoute,
+} as any)
+const GenesIdIndexRoute = GenesIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => GenesIdRoute,
+} as any)
+const GenesIdConflictsRoute = GenesIdConflictsRouteImport.update({
+  id: '/conflicts',
+  path: '/conflicts',
+  getParentRoute: () => GenesIdRoute,
+} as any)
+const SubmittersIdIndexRoute = SubmittersIdIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SubmittersIdRoute,
+} as any)
+const SubmittersIdConflictsRoute = SubmittersIdConflictsRouteImport.update({
+  id: '/conflicts',
+  path: '/conflicts',
+  getParentRoute: () => SubmittersIdRoute,
+} as any)
+const SubmittersIdVsOtherIdRoute = SubmittersIdVsOtherIdRouteImport.update({
+  id: '/vs/$otherId',
+  path: '/vs/$otherId',
+  getParentRoute: () => SubmittersIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/search': typeof SearchRoute
-  '/conditions/$id': typeof ConditionsIdRoute
-  '/genes/$id': typeof GenesIdRoute
+  '/conditions/$id': typeof ConditionsIdRouteWithChildren
+  '/genes/$id': typeof GenesIdRouteWithChildren
   '/scvs/$id': typeof ScvsIdRoute
-  '/submitters/$id': typeof SubmittersIdRoute
+  '/submitters/$id': typeof SubmittersIdRouteWithChildren
   '/variants/$id': typeof VariantsIdRoute
+  '/conditions/$id/conflicts': typeof ConditionsIdConflictsRoute
+  '/genes/$id/conflicts': typeof GenesIdConflictsRoute
+  '/submitters/$id/conflicts': typeof SubmittersIdConflictsRoute
+  '/conditions/$id/': typeof ConditionsIdIndexRoute
+  '/genes/$id/': typeof GenesIdIndexRoute
+  '/submitters/$id/': typeof SubmittersIdIndexRoute
+  '/submitters/$id/vs/$otherId': typeof SubmittersIdVsOtherIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/search': typeof SearchRoute
-  '/conditions/$id': typeof ConditionsIdRoute
-  '/genes/$id': typeof GenesIdRoute
   '/scvs/$id': typeof ScvsIdRoute
-  '/submitters/$id': typeof SubmittersIdRoute
   '/variants/$id': typeof VariantsIdRoute
+  '/conditions/$id/conflicts': typeof ConditionsIdConflictsRoute
+  '/genes/$id/conflicts': typeof GenesIdConflictsRoute
+  '/submitters/$id/conflicts': typeof SubmittersIdConflictsRoute
+  '/conditions/$id': typeof ConditionsIdIndexRoute
+  '/genes/$id': typeof GenesIdIndexRoute
+  '/submitters/$id': typeof SubmittersIdIndexRoute
+  '/submitters/$id/vs/$otherId': typeof SubmittersIdVsOtherIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/search': typeof SearchRoute
-  '/conditions/$id': typeof ConditionsIdRoute
-  '/genes/$id': typeof GenesIdRoute
+  '/conditions/$id': typeof ConditionsIdRouteWithChildren
+  '/genes/$id': typeof GenesIdRouteWithChildren
   '/scvs/$id': typeof ScvsIdRoute
-  '/submitters/$id': typeof SubmittersIdRoute
+  '/submitters/$id': typeof SubmittersIdRouteWithChildren
   '/variants/$id': typeof VariantsIdRoute
+  '/conditions/$id/conflicts': typeof ConditionsIdConflictsRoute
+  '/genes/$id/conflicts': typeof GenesIdConflictsRoute
+  '/submitters/$id/conflicts': typeof SubmittersIdConflictsRoute
+  '/conditions/$id/': typeof ConditionsIdIndexRoute
+  '/genes/$id/': typeof GenesIdIndexRoute
+  '/submitters/$id/': typeof SubmittersIdIndexRoute
+  '/submitters/$id/vs/$otherId': typeof SubmittersIdVsOtherIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,15 +151,26 @@ export interface FileRouteTypes {
     | '/scvs/$id'
     | '/submitters/$id'
     | '/variants/$id'
+    | '/conditions/$id/conflicts'
+    | '/genes/$id/conflicts'
+    | '/submitters/$id/conflicts'
+    | '/conditions/$id/'
+    | '/genes/$id/'
+    | '/submitters/$id/'
+    | '/submitters/$id/vs/$otherId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/search'
+    | '/scvs/$id'
+    | '/variants/$id'
+    | '/conditions/$id/conflicts'
+    | '/genes/$id/conflicts'
+    | '/submitters/$id/conflicts'
     | '/conditions/$id'
     | '/genes/$id'
-    | '/scvs/$id'
     | '/submitters/$id'
-    | '/variants/$id'
+    | '/submitters/$id/vs/$otherId'
   id:
     | '__root__'
     | '/'
@@ -109,15 +180,22 @@ export interface FileRouteTypes {
     | '/scvs/$id'
     | '/submitters/$id'
     | '/variants/$id'
+    | '/conditions/$id/conflicts'
+    | '/genes/$id/conflicts'
+    | '/submitters/$id/conflicts'
+    | '/conditions/$id/'
+    | '/genes/$id/'
+    | '/submitters/$id/'
+    | '/submitters/$id/vs/$otherId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SearchRoute: typeof SearchRoute
-  ConditionsIdRoute: typeof ConditionsIdRoute
-  GenesIdRoute: typeof GenesIdRoute
+  ConditionsIdRoute: typeof ConditionsIdRouteWithChildren
+  GenesIdRoute: typeof GenesIdRouteWithChildren
   ScvsIdRoute: typeof ScvsIdRoute
-  SubmittersIdRoute: typeof SubmittersIdRoute
+  SubmittersIdRoute: typeof SubmittersIdRouteWithChildren
   VariantsIdRoute: typeof VariantsIdRoute
 }
 
@@ -172,16 +250,108 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VariantsIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/conditions/$id/': {
+      id: '/conditions/$id/'
+      path: '/'
+      fullPath: '/conditions/$id/'
+      preLoaderRoute: typeof ConditionsIdIndexRouteImport
+      parentRoute: typeof ConditionsIdRoute
+    }
+    '/conditions/$id/conflicts': {
+      id: '/conditions/$id/conflicts'
+      path: '/conflicts'
+      fullPath: '/conditions/$id/conflicts'
+      preLoaderRoute: typeof ConditionsIdConflictsRouteImport
+      parentRoute: typeof ConditionsIdRoute
+    }
+    '/genes/$id/': {
+      id: '/genes/$id/'
+      path: '/'
+      fullPath: '/genes/$id/'
+      preLoaderRoute: typeof GenesIdIndexRouteImport
+      parentRoute: typeof GenesIdRoute
+    }
+    '/genes/$id/conflicts': {
+      id: '/genes/$id/conflicts'
+      path: '/conflicts'
+      fullPath: '/genes/$id/conflicts'
+      preLoaderRoute: typeof GenesIdConflictsRouteImport
+      parentRoute: typeof GenesIdRoute
+    }
+    '/submitters/$id/': {
+      id: '/submitters/$id/'
+      path: '/'
+      fullPath: '/submitters/$id/'
+      preLoaderRoute: typeof SubmittersIdIndexRouteImport
+      parentRoute: typeof SubmittersIdRoute
+    }
+    '/submitters/$id/conflicts': {
+      id: '/submitters/$id/conflicts'
+      path: '/conflicts'
+      fullPath: '/submitters/$id/conflicts'
+      preLoaderRoute: typeof SubmittersIdConflictsRouteImport
+      parentRoute: typeof SubmittersIdRoute
+    }
+    '/submitters/$id/vs/$otherId': {
+      id: '/submitters/$id/vs/$otherId'
+      path: '/vs/$otherId'
+      fullPath: '/submitters/$id/vs/$otherId'
+      preLoaderRoute: typeof SubmittersIdVsOtherIdRouteImport
+      parentRoute: typeof SubmittersIdRoute
+    }
   }
 }
+
+interface ConditionsIdRouteChildren {
+  ConditionsIdConflictsRoute: typeof ConditionsIdConflictsRoute
+  ConditionsIdIndexRoute: typeof ConditionsIdIndexRoute
+}
+
+const ConditionsIdRouteChildren: ConditionsIdRouteChildren = {
+  ConditionsIdConflictsRoute: ConditionsIdConflictsRoute,
+  ConditionsIdIndexRoute: ConditionsIdIndexRoute,
+}
+
+const ConditionsIdRouteWithChildren = ConditionsIdRoute._addFileChildren(
+  ConditionsIdRouteChildren,
+)
+
+interface GenesIdRouteChildren {
+  GenesIdConflictsRoute: typeof GenesIdConflictsRoute
+  GenesIdIndexRoute: typeof GenesIdIndexRoute
+}
+
+const GenesIdRouteChildren: GenesIdRouteChildren = {
+  GenesIdConflictsRoute: GenesIdConflictsRoute,
+  GenesIdIndexRoute: GenesIdIndexRoute,
+}
+
+const GenesIdRouteWithChildren =
+  GenesIdRoute._addFileChildren(GenesIdRouteChildren)
+
+interface SubmittersIdRouteChildren {
+  SubmittersIdConflictsRoute: typeof SubmittersIdConflictsRoute
+  SubmittersIdIndexRoute: typeof SubmittersIdIndexRoute
+  SubmittersIdVsOtherIdRoute: typeof SubmittersIdVsOtherIdRoute
+}
+
+const SubmittersIdRouteChildren: SubmittersIdRouteChildren = {
+  SubmittersIdConflictsRoute: SubmittersIdConflictsRoute,
+  SubmittersIdIndexRoute: SubmittersIdIndexRoute,
+  SubmittersIdVsOtherIdRoute: SubmittersIdVsOtherIdRoute,
+}
+
+const SubmittersIdRouteWithChildren = SubmittersIdRoute._addFileChildren(
+  SubmittersIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SearchRoute: SearchRoute,
-  ConditionsIdRoute: ConditionsIdRoute,
-  GenesIdRoute: GenesIdRoute,
+  ConditionsIdRoute: ConditionsIdRouteWithChildren,
+  GenesIdRoute: GenesIdRouteWithChildren,
   ScvsIdRoute: ScvsIdRoute,
-  SubmittersIdRoute: SubmittersIdRoute,
+  SubmittersIdRoute: SubmittersIdRouteWithChildren,
   VariantsIdRoute: VariantsIdRoute,
 }
 export const routeTree = rootRouteImport

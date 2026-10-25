@@ -28,7 +28,13 @@ export function RelationshipSelector({
     setChecked(next);
     void navigate({
       to: '.',
-      search: (s) => ({ ...s, gene_relationship: next.join(','), page: undefined }),
+      search: (s) => ({
+        ...s,
+        gene_relationship: next.join(','),
+        page: undefined,
+        pairs_page: undefined,
+        variants_page: undefined,
+      }),
       replace: true,
     });
   };

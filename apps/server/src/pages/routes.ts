@@ -13,8 +13,12 @@ const PAGES = [
   '/variants/:id',
   '/scvs/:id',
   '/genes/:id',
+  '/genes/:id/conflicts',
   '/submitters/:id',
+  '/submitters/:id/conflicts',
+  '/submitters/:id/vs/:otherId',
   '/conditions/:id',
+  '/conditions/:id/conflicts',
 ];
 
 /** Paths that are never pages, so a miss under them is a plain 404, not the app. */
