@@ -178,5 +178,10 @@ Candidates for M5–M6 and for showing to NCBI. Ordered by our current guess at 
 3. Where does the six-level conflict scale differ from NCBI's own conflict call, and do we show both?
 4. Is VCEP concordance (trial feature 2) possible from ClinVar-GKM alone? Expert panel SCVs are identifiable by review status, but the ClinGen Evidence Repository has more detail.
 5. ~~Flagged submissions in conflicts~~ Decided 25 October 2026: **left out of conflict calculations by default, never hidden.** ClinVar excludes them from its aggregate; ClinVar Miner counted them (59 flagged SCVs in 911 clinically significant pairs in its sample). Every SCV list still shows flagged SCVs, in their own group (as ClinVar does), and conflict views say how many were left out, with a toggle to include them.
-6. **"not provided" and "not specified" with same-condition matching.** ClinVar Miner never compares them with named conditions, undercounting conflicts. Options: compare them with every condition (a wildcard), or make cross-condition comparison the default, as ClinVar's own aggregate does. Proposed: wildcard, so same-condition stays the default and these SCVs still count.
+6. ~~"not provided" and "not specified" with same-condition matching~~ Decided 25 October 2026: **three rules, strict by default, chosen in the conflict views** (`condition_match` in [api.md](api.md#three-resources-one-query-model)):
+   - `strict` (default): the two SCVs name the same condition, as ClinVar Miner did;
+   - `wildcard`: an SCV whose only conditions are "not provided" or "not specified" matches any condition;
+   - `any`: conditions are ignored, as in ClinVar's own aggregate.
+
+   On 2026-10-18 pathogenicity SCVs (flagged excluded), these find 18,304, 35,444 and 41,739 variants with a clinically significant conflict. Grouping related conditions through MONDO (shared ancestors, or other ontology information rather than a plain count of hops) comes with the MONDO work in Phase 3; to be designed then.
 
