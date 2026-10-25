@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Dependency hygiene, as in gencc (docs/stack.md).
+# Exact versions only; ranges are never written to package.json.
+saveExact: true
+# New versions must be at least 7 days old (minutes). Explicitly set, so it is strict.
+minimumReleaseAge: 10080
+# Dependency build scripts are blocked; an unapproved build fails the install.
+# Approve a package by adding it to allowBuilds with a comment explaining why.
+# (@duckdb/node-api needs none: its native binding comes prebuilt in per-platform packages.)
+strictDepBuilds: true
+engineStrict: true

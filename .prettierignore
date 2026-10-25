@@ -1,0 +1,5 @@
+pnpm-lock.yaml
+*.md
+*.sql
+data/
+docs/research/

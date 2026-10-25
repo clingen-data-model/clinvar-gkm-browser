@@ -14,3 +14,4 @@ data/
 *.duckdb
 *.duckdb.wal
 docs/research/clinvar-gkm-bench/logs/
+logs/
