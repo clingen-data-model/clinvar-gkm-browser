@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { Fragment } from 'react';
 import { Stars } from '../classification/Stars.tsx';
 import { TermPill } from '../classification/TermPill.tsx';
+import { RelationshipMarker } from './RelationshipMarker.tsx';
 
 interface Props {
   rows: ScvRow[];
@@ -53,6 +54,7 @@ export function ScvTable({ rows, showVariant = false, typeLabels }: Props) {
                         <Link to="/variants/$id" params={{ id: r.variationId }}>
                           {r.variationId}
                         </Link>
+                        <RelationshipMarker relationship={r.geneRelationship} />
                       </td>
                     ) : null}
                     <td className="py-2 pr-3">

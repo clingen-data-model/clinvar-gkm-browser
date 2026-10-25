@@ -99,8 +99,21 @@ describe('entities', () => {
   it('counts a gene, its submitters and conditions', async () => {
     const gene = await get('/api/v1/genes/3077', item(GeneDetail));
     expect(gene.status).toBe(200);
-    // 339 variants are within HFE (254 alone, 85 with the overlapping HFE-AS1); 334 have SCVs.
-    expect(gene.body.data).toMatchObject({ symbol: 'HFE', variantCount: 334 });
+    // Within HFE by default: 250 variants with SCVs alone, 84 with the overlapping HFE-AS1.
+    expect(gene.body.data).toMatchObject({
+      symbol: 'HFE',
+      relationships: ['single', 'overlap'],
+      variantCount: 334,
+    });
+    const byRelationship = Object.fromEntries(
+      gene.body.data.relationshipCounts.map((r) => [r.relationship, r.variants]),
+    );
+    expect(byRelationship).toMatchObject({ single: 250, overlap: 84, spanning: 18, near: 5 });
+    const all = await get(
+      '/api/v1/genes/3077?gene_relationship=single,overlap,spanning,near',
+      item(GeneDetail),
+    );
+    expect(all.body.data.variantCount).toBe(357);
 
     const { body: scvs } = await get('/api/v1/variants/10/scvs', ScvList);
     const row = scvs.data[0];
@@ -139,7 +152,7 @@ describe('lists and summaries', () => {
     expect(body.query).toMatchObject({
       gene: ['3077'],
       bucket: ['P'],
-      gene_relationship: ['within'],
+      gene_relationship: ['single', 'overlap'],
     });
   });
 
@@ -169,6 +182,19 @@ describe('lists and summaries', () => {
     expect(submitters.size).toBe(2);
     expect(body.page.total).toBeGreaterThan(2);
     expect(Object.keys(body.dimensions[0]?.labels ?? {})).toHaveLength(2);
+  });
+
+  it("marks each row of a gene's list with its variant's relationship to the gene", async () => {
+    const { body } = await get('/api/v1/scvs?gene=3077&variant=10&limit=1', ScvPage);
+    expect(body.data[0]?.geneRelationship).toEqual({
+      relationship: 'overlap',
+      otherGenes: ['HFE-AS1'],
+      otherGeneCount: 1,
+    });
+    const unfiltered = await get('/api/v1/scvs?variant=10&limit=1', ScvPage);
+    expect(unfiltered.body.data[0]?.geneRelationship).toBeNull();
+    const bad = await get('/api/v1/genes/3077?gene_relationship=within', ProblemDetails);
+    expect(bad.status).toBe(400);
   });
 
   it('rejects unknown filters and sort keys with the parameter named', async () => {

@@ -53,3 +53,14 @@ for (const path of ['/', '/variants/10', '/genes/3077', '/search?q=hfe']) {
     expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
   });
 }
+
+test("a gene's variants can include those spanning or near it", async ({ page }) => {
+  await page.goto('/genes/3077');
+  const variants = page.getByRole('definition').first();
+  await expect(variants).toHaveText('334');
+  // H63D is within HFE and its antisense gene; its rows say so.
+  await expect(page.getByText('also in HFE-AS1').first()).toBeVisible();
+  await page.getByRole('checkbox', { name: /Spanning the gene/ }).check();
+  await expect(page).toHaveURL(/gene_relationship=single,overlap,spanning/);
+  await expect(variants).toHaveText('352');
+});

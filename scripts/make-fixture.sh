@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write a small test release from a derived one: every variant located within HFE, two BRCA1 variants,
+# Write a small test release from a derived one: every variant on HFE's gene list, two BRCA1 variants,
 # and a few somatic oncogenicity and clinical-impact variants, with only the rows they reach.
 # Output: apps/server/test/fixture/derived/<schema>/<release>/, committed for tests.
 #
@@ -23,7 +23,7 @@ mkdir -p "$out"
   cat <<SQL
 CREATE TABLE pick AS
 SELECT DISTINCT variation_id FROM src_variant_gene
-WHERE gene_id = 3077 AND relationship_type IN ('within single gene', 'within multiple genes by overlap')  -- HFE
+WHERE gene_id = 3077                                                   -- HFE, every relationship
 UNION SELECT unnest([17661, 17662])                                    -- BRCA1 c.181T>G, c.68_69del
 UNION SELECT unnest([13961, 1299388, 13652, 372511, 12356, 12579]);    -- somatic SCI, ONCO
 

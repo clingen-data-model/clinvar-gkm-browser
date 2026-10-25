@@ -1,34 +1,37 @@
 // Gene, submitter and condition pages: the entity, and counts over the SCVs that belong to it.
 // Which SCVs belong is a join or filter over `scv s`, given per entity below.
 
-import { ClassificationCount, ConditionDetail, GeneDetail, SubmitterDetail } from '@cvb/shared/api';
+import {
+  ClassificationCount,
+  ConditionDetail,
+  GeneDetail,
+  GeneRelationshipCount,
+  SubmitterDetail,
+} from '@cvb/shared/api';
+import {
+  clinvarRelationshipTypes,
+  GENE_RELATIONSHIPS,
+  RELATIONSHIP_CODE_SQL,
+  SqlParams,
+  type GeneRelationship,
+} from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
 
-/**
- * Variants located within the gene: ClinVar's "within single gene" and "within multiple genes by
- * overlap". The second matters: HFE c.187C>G is "multiple genes" only because HFE overlaps its
- * antisense gene HFE-AS1 (ClinVar Miner merged antisense genes for this reason). Large CNVs that
- * span whole genes ("genes overlapped by variant") and variants near a gene don't count
- * (docs/api.md, open question 2).
- */
-export const GENE_RELATIONSHIPS_WITHIN = `('within single gene', 'within multiple genes by overlap')`;
-const GENE_SCVS = `
-  FROM variant_gene vg JOIN scv s ON s.variation_id = vg.variation_id
-  WHERE vg.gene_id = $1 AND vg.relationship_type IN ${GENE_RELATIONSHIPS_WITHIN}`;
 const SUBMITTER_SCVS = `FROM scv s WHERE s.submitter_id = $1`;
 const CONDITION_SCVS = `
   FROM scv_condition sc JOIN scv s ON s.scv_id = sc.scv_id WHERE sc.condition_id = $1`;
 
 const Counts = z.object({ scvCount: z.int(), variantCount: z.int() });
 
-async function counts(db: Database, release: string, scvs: string, id: number) {
+/** Counts over the SCVs `scvs` selects; `params` are its parameters ($1 is the entity's id). */
+async function counts(db: Database, release: string, scvs: string, params: (string | number)[]) {
   const [totals, classifications] = await Promise.all([
     db.query(
       release,
       `SELECT count(*)::INTEGER AS "scvCount", count(DISTINCT s.variation_id)::INTEGER AS "variantCount"
        ${scvs}`,
-      [id],
+      params,
     ),
     db.query(
       release,
@@ -40,7 +43,7 @@ async function counts(db: Database, release: string, scvs: string, id: number) {
        LEFT JOIN classification_type t ON t.code = s.classification_type
        GROUP BY ALL
        ORDER BY min(t.display_order), min(ct.display_order)`,
-      [id],
+      params,
     ),
   ]);
   return {
@@ -49,10 +52,24 @@ async function counts(db: Database, release: string, scvs: string, id: number) {
   };
 }
 
+/** A gene's SCVs: those whose variant's gene list relates it to the gene as chosen. */
+function geneScvs(geneId: number, relationships: readonly GeneRelationship[]) {
+  const params = new SqlParams();
+  params.add(geneId);
+  const types = clinvarRelationshipTypes(relationships);
+  const where = types === null ? '' : ` AND vg.relationship_type IN (${params.list(types)})`;
+  return {
+    sql: `FROM variant_gene vg JOIN scv s ON s.variation_id = vg.variation_id
+          WHERE vg.gene_id = $1${where}`,
+    params: params.values.flatMap((v) => (v === null || typeof v === 'boolean' ? [] : [v])),
+  };
+}
+
 export async function geneDetail(
   db: Database,
   release: string,
   geneId: number,
+  relationships: GeneRelationship[],
 ): Promise<GeneDetail | null> {
   const rows = await db.query(
     release,
@@ -60,7 +77,36 @@ export async function geneDetail(
     [geneId],
   );
   if (rows[0] === undefined) return null;
-  return GeneDetail.parse({ ...rows[0], ...(await counts(db, release, GENE_SCVS, geneId)) });
+  const selected = geneScvs(geneId, relationships);
+  const [selectedCounts, byRelationship] = await Promise.all([
+    counts(db, release, selected.sql, selected.params),
+    db.query(
+      release,
+      `SELECT ${RELATIONSHIP_CODE_SQL} AS relationship,
+              count(DISTINCT s.variation_id)::INTEGER AS variants,
+              count(s.scv_id)::INTEGER AS scvs
+       FROM variant_gene vg LEFT JOIN scv s ON s.variation_id = vg.variation_id
+       WHERE vg.gene_id = $1 GROUP BY 1`,
+      [geneId],
+    ),
+  ]);
+  const found = new Map(
+    byRelationship.map((r) => {
+      const row = GeneRelationshipCount.omit({ label: true }).parse(r);
+      return [row.relationship, row];
+    }),
+  );
+  return GeneDetail.parse({
+    ...rows[0],
+    relationships,
+    ...selectedCounts,
+    relationshipCounts: Object.entries(GENE_RELATIONSHIPS).map(([code, r]) => ({
+      relationship: code,
+      label: r.label,
+      variants: found.get(GeneRelationshipCount.shape.relationship.parse(code))?.variants ?? 0,
+      scvs: found.get(GeneRelationshipCount.shape.relationship.parse(code))?.scvs ?? 0,
+    })),
+  });
 }
 
 export async function submitterDetail(
@@ -76,7 +122,7 @@ export async function submitterDetail(
   if (rows[0] === undefined) return null;
   return SubmitterDetail.parse({
     ...rows[0],
-    ...(await counts(db, release, SUBMITTER_SCVS, submitterId)),
+    ...(await counts(db, release, SUBMITTER_SCVS, [submitterId])),
   });
 }
 
@@ -97,6 +143,6 @@ export async function conditionDetail(
   if (rows[0] === undefined) return null;
   return ConditionDetail.parse({
     ...rows[0],
-    ...(await counts(db, release, CONDITION_SCVS, conditionId)),
+    ...(await counts(db, release, CONDITION_SCVS, [conditionId])),
   });
 }

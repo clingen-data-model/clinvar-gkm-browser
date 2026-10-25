@@ -21,7 +21,7 @@ function base(query: ParsedQuery, params: SqlParams): string {
 }
 
 function context(query: ParsedQuery, params: SqlParams): FilterContext {
-  return { params, options: { geneRelationship: query.geneRelationship } };
+  return { params, options: { geneRelationships: query.geneRelationships } };
 }
 
 function measures(query: ParsedQuery): string {

@@ -47,7 +47,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 | `release` | all | ClinVar release date; default latest |
 | `variant` | SCVs, variants | variation ID |
 | `gene` | SCVs, variants | NCBI gene ID, through the variant's gene list |
-| `gene_relationship` | SCVs, variants | `within` (default: located within the gene, alone or with overlapping genes), `single`, or `any` (also CNVs spanning the gene, and variants near it) |
+| `gene_relationship` | SCVs, variants | which relationships to the gene count, any of `single`, `overlap`, `spanning`, `near`, `asserted` (default `single,overlap`; see open question 2) |
 | `variant_type`, `consequence` | SCVs, variants | ClinVar variation type; molecular consequence (SO term) |
 | `region` | SCVs, variants | `chr17:43044295-43125483` (GRCh38) |
 | `submitter` | SCVs | submitter ID |
@@ -185,6 +185,6 @@ apps/server/src/export/        streaming TSV/CSV/NDJSON writers, parquet via COP
 ## Open questions
 
 1. **Classification normalization:** the mapping rules and the conflict-level ranks, with the VUS sub-tiers and the somatic lanes. Needs input from curators.
-2. **`gene_relationship` default.** Provisionally (25 October 2026), a gene's variants are those located within it: ClinVar's "within single gene" and "within multiple genes by overlap". The second can't be dropped: HFE c.187C>G (H63D) is "multiple genes" only because HFE overlaps its antisense gene HFE-AS1. ClinVar Miner merged antisense genes for the same reason. Large CNVs spanning whole genes ("genes overlapped by variant") and variants near a gene are left out. The filter would take `within` (default), `single` or `any`.
+2. ~~`gene_relationship` default~~ Decided 25 October 2026. `gene_relationship` takes any of `single` (within the gene only), `overlap` (within the gene and an overlapping gene), `spanning` (large variants spanning the gene), `near` (upstream or downstream) and `asserted` (named by the submitter, not located by ClinVar), mapped from ClinVar's relationship types. The default is `single,overlap`: HFE c.187C>G (H63D) is "multiple genes" only because HFE overlaps its antisense gene HFE-AS1. The gene page shows counts for every relationship with a selector. In a list filtered by one gene, each row says how its variant relates to that gene and names its other genes.
 3. **MONDO rollups** (ClinVar Miner's "variants by MONDO condition") need the MONDO hierarchy, which isn't in ClinVar-GKM. A new external source to download and version.
 4. **Offset paging** is simple, but slows for deep pages on large results. Fine for the UI; exports stream instead. Revisit if API users page deep.

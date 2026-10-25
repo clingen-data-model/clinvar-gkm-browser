@@ -11,18 +11,54 @@ import type { SqlParams } from './sql.ts';
 
 /** Options that modify filters rather than filter by themselves. */
 export interface FilterOptions {
-  geneRelationship: GeneRelationship;
+  geneRelationships: readonly GeneRelationship[];
 }
 
-export const GeneRelationship = z.enum(['within', 'single', 'any']);
+/**
+ * How a variant relates to a gene on its gene list, grouping ClinVar's relationship types. A gene
+ * filter, grouping or page includes the chosen ones (docs/api.md, open question 2).
+ */
+export const GeneRelationship = z.enum(['single', 'overlap', 'spanning', 'near', 'asserted']);
 export type GeneRelationship = z.infer<typeof GeneRelationship>;
 
-/** ClinVar gene-list relationships each gene_relationship option includes (docs/api.md, open question 2). */
-export const GENE_RELATIONSHIP_TYPES: Record<GeneRelationship, readonly string[] | null> = {
-  within: ['within single gene', 'within multiple genes by overlap'],
-  single: ['within single gene'],
-  any: null,
+export const GENE_RELATIONSHIPS: Record<
+  GeneRelationship,
+  { label: string; clinvarTypes: readonly string[] }
+> = {
+  single: { label: 'Within the gene only', clinvarTypes: ['within single gene'] },
+  overlap: {
+    label: 'Within the gene and an overlapping gene',
+    clinvarTypes: ['within multiple genes by overlap'],
+  },
+  spanning: { label: 'Spanning the gene', clinvarTypes: ['genes overlapped by variant'] },
+  near: { label: 'Near the gene', clinvarTypes: ['near gene, upstream', 'near gene, downstream'] },
+  asserted: {
+    label: 'Named by the submitter, not located by ClinVar',
+    clinvarTypes: ['asserted, but not computed'],
+  },
 };
+
+/**
+ * Variants located within the gene. "overlap" matters as much as "single": HFE c.187C>G is
+ * "multiple genes" only because HFE overlaps its antisense gene HFE-AS1. Large variants spanning
+ * the gene, and variants near it, are opt-in.
+ */
+export const DEFAULT_GENE_RELATIONSHIPS: readonly GeneRelationship[] = ['single', 'overlap'];
+
+/** The ClinVar relationship types for a set of relationships, or null for all of them. */
+export function clinvarRelationshipTypes(
+  relationships: readonly GeneRelationship[],
+): string[] | null {
+  if (GeneRelationship.options.every((r) => relationships.includes(r))) return null;
+  return relationships.flatMap((r) => GENE_RELATIONSHIPS[r].clinvarTypes);
+}
+
+/** SQL mapping variant_gene.relationship_type to its GeneRelationship code. */
+export const RELATIONSHIP_CODE_SQL = `CASE relationship_type
+  ${Object.entries(GENE_RELATIONSHIPS)
+    .flatMap(([code, r]) => r.clinvarTypes.map((t) => `WHEN '${t}' THEN '${code}'`))
+    .join('\n  ')}
+  END`;
 
 export interface FilterContext {
   params: SqlParams;
@@ -101,7 +137,7 @@ export const FILTERS: readonly Filter[] = [
     value: id,
     sql: (v, { params, options }) => {
       const genes = params.list(v);
-      const types = GENE_RELATIONSHIP_TYPES[options.geneRelationship];
+      const types = clinvarRelationshipTypes(options.geneRelationships);
       const relationship =
         types === null ? '' : ` AND relationship_type IN (${params.list(types)})`;
       return `s.variation_id IN (SELECT variation_id FROM variant_gene WHERE gene_id IN (${genes})${relationship})`;

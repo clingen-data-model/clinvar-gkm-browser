@@ -92,6 +92,17 @@ export const ScvRow = z.object({
   dateSubmitted: z.iso.date().nullable(),
   conditions: z.array(ConditionRef),
   comment: z.string().nullable(),
+  /**
+   * In a list filtered by one gene: how this SCV's variant relates to that gene, and the other
+   * genes on the variant's gene list (the first few, and how many). Null otherwise.
+   */
+  geneRelationship: z
+    .object({
+      relationship: z.enum(['single', 'overlap', 'spanning', 'near', 'asserted']),
+      otherGenes: z.array(z.string()),
+      otherGeneCount: z.int(),
+    })
+    .nullable(),
 });
 export type ScvRow = z.infer<typeof ScvRow>;
 
@@ -144,10 +155,21 @@ export const ClassificationCount = z.object({
   scvs: z.int(),
 });
 
+export const GeneRelationshipCount = z.object({
+  relationship: z.enum(['single', 'overlap', 'spanning', 'near', 'asserted']),
+  label: z.string(),
+  variants: z.int(),
+  scvs: z.int(),
+});
+
 export const GeneDetail = Gene.extend({
+  /** The relationships the counts below include (the request's gene_relationship). */
+  relationships: z.array(z.enum(['single', 'overlap', 'spanning', 'near', 'asserted'])),
   variantCount: z.int(),
   scvCount: z.int(),
   classifications: z.array(ClassificationCount),
+  /** Variants and SCVs for each relationship, whether included or not. */
+  relationshipCounts: z.array(GeneRelationshipCount),
 });
 export type GeneDetail = z.infer<typeof GeneDetail>;
 
@@ -172,6 +194,12 @@ export const ConditionDetail = z.object({
   classifications: z.array(ClassificationCount),
 });
 export type ConditionDetail = z.infer<typeof ConditionDetail>;
+
+/** The gene page's query string: release, and which relationships to count. */
+export const GeneQuery = z.object({
+  release: z.iso.date().optional(),
+  gene_relationship: z.union([z.string(), z.array(z.string())]).optional(),
+});
 
 /** A path parameter holding an integer id. */
 export const IntId = z.coerce.number().int().positive();

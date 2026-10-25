@@ -5,6 +5,7 @@
 import { z } from 'zod';
 import { DIMENSIONS_BY_NAME, MEASURE_NAMES, type Dimension, type Measure } from './dimensions.ts';
 import {
+  DEFAULT_GENE_RELATIONSHIPS,
   FILTERS_BY_NAME,
   GeneRelationship,
   type AppliedFilter,
@@ -17,7 +18,7 @@ export type RawQuery = Record<string, string | string[] | undefined>;
 export interface ParsedQuery {
   release: string | undefined;
   filters: AppliedFilter[];
-  geneRelationship: GeneRelationship;
+  geneRelationships: GeneRelationship[];
   groupBy: Dimension[];
   measures: Measure[];
   sort: string[];
@@ -90,13 +91,11 @@ export function parseQuery(
     }
   }
 
-  const geneRelationship = GeneRelationship.safeParse(
-    values(raw['gene_relationship'])[0] ?? 'within',
-  );
-  if (!geneRelationship.success) {
-    problems.push({ path: 'querystring/gene_relationship', message: 'Use within, single or any.' });
+  const geneRelationships = parseGeneRelationships(raw['gene_relationship']);
+  if (!geneRelationships.ok) {
+    problems.push({ path: 'querystring/gene_relationship', message: geneRelationships.error });
   } else if (filters.some((f) => f.name === 'gene') || values(raw['group_by']).includes('gene')) {
-    canonical['gene_relationship'] = [geneRelationship.data];
+    canonical['gene_relationship'] = geneRelationships.value;
   }
 
   const groupBy: Dimension[] = [];
@@ -136,7 +135,7 @@ export function parseQuery(
   const releaseOk = release === undefined || z.iso.date().safeParse(release).success;
   if (!releaseOk) problems.push({ path: 'querystring/release', message: 'Use YYYY-MM-DD.' });
 
-  if (problems.length > 0 || !limit.success || !offset.success || !geneRelationship.success) {
+  if (problems.length > 0 || !limit.success || !offset.success || !geneRelationships.ok) {
     return { ok: false, problems };
   }
   return {
@@ -144,7 +143,7 @@ export function parseQuery(
     query: {
       release,
       filters,
-      geneRelationship: geneRelationship.data,
+      geneRelationships: geneRelationships.value,
       groupBy,
       measures,
       sort: values(raw['sort']),
@@ -158,9 +157,25 @@ export function parseQuery(
   };
 }
 
+/** gene_relationship's values, in canonical order, or the default if absent. */
+export function parseGeneRelationships(
+  raw: string | string[] | undefined,
+): { ok: true; value: GeneRelationship[] } | { ok: false; error: string } {
+  const given = values(raw);
+  if (given.length === 0) return { ok: true, value: [...DEFAULT_GENE_RELATIONSHIPS] };
+  const bad = given.filter((v) => !GeneRelationship.safeParse(v).success);
+  if (bad.length > 0) {
+    return {
+      ok: false,
+      error: `Use ${GeneRelationship.options.join(', ')}; not ${bad.join(', ')}.`,
+    };
+  }
+  return { ok: true, value: GeneRelationship.options.filter((r) => given.includes(r)) };
+}
+
 /** The WHERE clause for a parsed query's filters, over `scv s`. */
 export function whereSql(query: ParsedQuery, params: SqlParams): string {
-  const ctx: FilterContext = { params, options: { geneRelationship: query.geneRelationship } };
+  const ctx: FilterContext = { params, options: { geneRelationships: query.geneRelationships } };
   const predicates = query.filters.map((f) => f.predicate(ctx));
   return predicates.length === 0 ? 'true' : predicates.join(' AND ');
 }

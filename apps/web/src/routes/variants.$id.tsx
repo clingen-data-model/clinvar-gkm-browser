@@ -1,10 +1,11 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { ScvTable } from '../components/scv/ScvTable.tsx';
 import { Page } from '../components/shell/Page.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
 import { AggregateCalls } from '../components/variant/AggregateCalls.tsx';
+import { GeneList } from '../components/variant/GeneList.tsx';
 import { variantQuery, variantScvsQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
 import { useTypeLabels } from '../lib/vocabulary.ts';
@@ -39,23 +40,7 @@ function VariantPage() {
       ? null
       : `${vrs.sequenceAccession}:${String(vrs.start + 1)}${vrs.end !== null && vrs.end !== vrs.start + 1 ? `-${String(vrs.end)}` : ''}`;
   const facts: [string, ReactNode][] = [
-    [
-      'Genes',
-      variant.genes.length === 0
-        ? '—'
-        : variant.genes.map((g, i) => (
-            <span key={g.geneId}>
-              {i > 0 ? ', ' : ''}
-              {g.symbol === null ? (
-                `Gene ${String(g.geneId)}`
-              ) : (
-                <Link to="/genes/$id" params={{ id: g.geneId }}>
-                  {g.symbol}
-                </Link>
-              )}
-            </span>
-          )),
-    ],
+    ['Genes', <GeneList key="genes" genes={variant.genes} />],
     ['Type', variant.variationType],
     ['Location (GRCh38)', location ?? variant.cytogeneticLocation ?? '—'],
   ];

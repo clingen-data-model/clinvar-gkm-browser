@@ -60,10 +60,13 @@ export const scvQuery = (id: number) =>
     ...forever,
   });
 
-export const geneQuery = (id: number) =>
+export const geneQuery = (id: number, relationships: readonly string[]) =>
   queryOptions({
-    queryKey: ['gene', id],
-    queryFn: () => getJson(`/genes/${String(id)}`, item(GeneDetail)),
+    queryKey: ['gene', id, relationships],
+    queryFn: () =>
+      getJson(`/genes/${String(id)}`, item(GeneDetail), {
+        gene_relationship: relationships.join(','),
+      }),
     ...forever,
   });
 

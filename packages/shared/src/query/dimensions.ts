@@ -3,7 +3,7 @@
 // are always strings in responses. Some dimensions are multi-valued (an SCV has several
 // conditions, methods or genes) and count an SCV once under each value.
 
-import { GENE_RELATIONSHIP_TYPES, type FilterContext } from './filters.ts';
+import { clinvarRelationshipTypes, type FilterContext } from './filters.ts';
 
 export interface Dimension {
   name: string;
@@ -41,7 +41,7 @@ export const DIMENSIONS: readonly Dimension[] = [
     label: 'Gene',
     multiValued: true,
     join: (a, { params, options }) => {
-      const types = GENE_RELATIONSHIP_TYPES[options.geneRelationship];
+      const types = clinvarRelationshipTypes(options.geneRelationships);
       const where = types === null ? '' : ` WHERE relationship_type IN (${params.list(types)})`;
       return `LEFT JOIN (SELECT variation_id, gene_id FROM variant_gene${where}) ${a} ON ${a}.variation_id = s.variation_id`;
     },

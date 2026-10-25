@@ -4,6 +4,7 @@
 import {
   ConditionDetail,
   GeneDetail,
+  GeneQuery,
   IntId,
   ReleaseList,
   ReleaseQuery,
@@ -18,7 +19,12 @@ import {
   SummaryResponse,
   Vocabularies,
 } from '@cvb/shared/api';
-import { documentedQuery, parseQuery, type RawQuery } from '@cvb/shared/query';
+import {
+  documentedQuery,
+  parseGeneRelationships,
+  parseQuery,
+  type RawQuery,
+} from '@cvb/shared/query';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { z } from 'zod';
 import type { Database } from '../data/database.ts';
@@ -104,12 +110,32 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
     return { release, data };
   });
 
-  app.get('/genes/:id', { schema: itemSchema('genes', GeneDetail) }, async (req, reply) => {
-    const release = db.resolve(req.query.release);
-    const data = await geneDetail(db, release, req.params.id);
-    if (data === null) return sendProblem(reply, notFound('gene', req.params.id, release));
-    return { release, data };
-  });
+  app.get(
+    '/genes/:id',
+    {
+      schema: {
+        tags: ['genes'],
+        description:
+          'A gene, with counts over the variants related to it as gene_relationship chooses.',
+        params: IdParams,
+        querystring: GeneQuery,
+        response: { 200: item(GeneDetail) },
+      },
+    },
+    async (req, reply) => {
+      const relationships = parseGeneRelationships(req.query.gene_relationship);
+      if (!relationships.ok) {
+        return sendProblem(
+          reply,
+          invalid([{ path: 'querystring/gene_relationship', message: relationships.error }]),
+        );
+      }
+      const release = db.resolve(req.query.release);
+      const data = await geneDetail(db, release, req.params.id, relationships.value);
+      if (data === null) return sendProblem(reply, notFound('gene', req.params.id, release));
+      return { release, data };
+    },
+  );
 
   app.get(
     '/submitters/:id',

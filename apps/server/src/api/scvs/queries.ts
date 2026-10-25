@@ -4,6 +4,7 @@
 import { ScvDetail, ScvRow, type SummaryResponse } from '@cvb/shared/api';
 import {
   BUCKET_LABELS,
+  RELATIONSHIP_CODE_SQL,
   compileLabels,
   compileSummaryRows,
   compileSummaryTotals,
@@ -14,8 +15,15 @@ import {
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
 
-/** The select list of an ScvRow, over `scv s`; needs ScvRowJoins. */
-export const SCV_ROW_COLUMNS = `
+/** The select list of an ScvRow, over `scv s`; needs SCV_ROW_JOINS. */
+export const SCV_ROW_COLUMNS = scvRowColumns('NULL');
+
+/**
+ * An ScvRow's select list, with `geneRelationship` from the given SQL: NULL, or
+ * geneRelationshipSql for a list filtered by one gene.
+ */
+function scvRowColumns(geneRelationship: string): string {
+  return `
   s.scv_id AS "scvId",
   'SCV' || lpad(s.scv_id::VARCHAR, 9, '0') AS accession,
   s.scv_version AS version,
@@ -37,7 +45,24 @@ export const SCV_ROW_COLUMNS = `
     FROM scv_condition sc JOIN condition c ON c.condition_id = sc.condition_id
     WHERE sc.scv_id = s.scv_id
   ), []) AS conditions,
-  s.description AS comment`;
+  s.description AS comment,
+  ${geneRelationship} AS "geneRelationship"`;
+}
+
+/**
+ * How the row's variant relates to one gene (the placeholder holds its id), and the variant's
+ * other genes: the first five by symbol, and how many there are.
+ */
+function geneRelationshipSql(gene: string): string {
+  return `(
+    SELECT {'relationship': max(CASE WHEN vg.gene_id = ${gene} THEN ${RELATIONSHIP_CODE_SQL} END),
+            'otherGenes': coalesce(list(coalesce(g.symbol, 'Gene ' || vg.gene_id) ORDER BY g.symbol)
+                                     FILTER (WHERE vg.gene_id <> ${gene}), [])[1:5],
+            'otherGeneCount': (count(*) FILTER (WHERE vg.gene_id <> ${gene}))::INTEGER}
+    FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
+    WHERE vg.variation_id = s.variation_id
+  )`;
+}
 
 export const SCV_ROW_JOINS = `
   LEFT JOIN submitter sub ON sub.submitter_id = s.submitter_id
@@ -152,13 +177,21 @@ export async function listScvs(
   const where = whereSql(query, params);
   const limit = params.add(query.limit);
   const offset = params.add(query.offset);
+  // Filtered by one gene: say how each row's variant relates to it.
+  const genes = query.filters.filter((f) => f.name === 'gene' && !f.negate);
+  const oneGene =
+    genes.length === 1 && genes[0]?.values.length === 1 ? genes[0].values[0] : undefined;
+  const columns =
+    oneGene === undefined
+      ? SCV_ROW_COLUMNS
+      : scvRowColumns(geneRelationshipSql(`${params.add(Number(oneGene))}::INTEGER`));
   const page = db.query(
     release,
     `WITH page AS (
        SELECT s.scv_id, s.variation_id FROM scv s WHERE ${where}
        ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}
      )
-     SELECT ${SCV_ROW_COLUMNS}
+     SELECT ${columns}
      FROM page p JOIN scv s ON s.variation_id = p.variation_id AND s.scv_id = p.scv_id
      ${SCV_ROW_JOINS}
      ORDER BY ${order}`,
