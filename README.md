@@ -77,3 +77,7 @@ docs/            Design docs and research notes
 - ClinVar data is from NCBI's [ClinVar](https://www.ncbi.nlm.nih.gov/clinvar/), via ClinGen's [ClinVar-GKM](https://dataexchange.clinicalgenome.org/clinvar-gkm/).
 - The classification vocabulary and conflict groups follow ClinGen's [clinvar-ingest-bq-tools](https://github.com/clingen-data-model/clinvar-ingest-bq-tools).
 - The conflict scale and many of the views follow ClinVar Miner (Henrie et al., *Human Mutation* 2018).
+
+## License
+
+The code is under the [MIT License](LICENSE). ClinVar data is NCBI's, as published by ClinVar-GKM; it isn't part of this repository, except for the small test fixture.
