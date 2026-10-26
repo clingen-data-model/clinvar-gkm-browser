@@ -107,7 +107,7 @@ History is the biggest gap a new tool can fill (see [features.md](features.md#tr
 **Sources, in order of preference:**
 1. **Going forward:** each install appends to its interval tables from every release it derives. This needs no upstream change, but an install only has history from the day it started. A shared history needs one of the sources below, published for installs to download.
 2. **2026-06-27 onward:** replay ClinVar-GKM's 2026-06-27 monthly bundle and the weekly JSON deltas after it, all in the 1.1 format ([history.md](history.md#building-it)).
-3. **Before 2026-07:** either the BigQuery temporal tables built by clingen-data-model/clinvar-ingest-bq-tools (`scripts/temporal-table-procs/`) (not public; would be a one-off export), or NCBI's archived tab-delimited `submission_summary` and `variant_summary` files, back to 2014. The tab-delimited files lack GA4GH structure but carry what the history tables track. Either way this is a one-off backfill, recorded as an exception to "ClinVar-GKM is the input".
+3. **Before 2026-06-27:** either the BigQuery temporal tables built by clingen-data-model/clinvar-ingest-bq-tools (`scripts/temporal-table-procs/`) (not public; would be a one-off export), or NCBI's archived tab-delimited `submission_summary` and `variant_summary` files, back to 2014. The tab-delimited files lack GA4GH structure but carry what the history tables track. Either way this is a one-off backfill, recorded as an exception to "ClinVar-GKM is the input".
 
 ## Asks of ClinVar-GKM
 
