@@ -3,7 +3,7 @@
 Researched 2026-10-24. Legend: **[M]** = measured by me from this machine (duckdb 1.5.5 CLI + curl, Boston-area
 Cloudflare PoP); **[D]** = stated in ClinVar-GKM docs / upstream repo; **[I]** = my inference.
 
-Important: the local checkout `~/dev/clinvar-gkm` is stale (last commit 2026-08-24). The live site and upstream
+Important: a local clone of clingen-data-model/clinvar-gkm was stale (last commit 2026-08-24). The live site and upstream
 `main` (GitHub, 2026-10-23) describe release **1.1.0** (2026-10-22) with a new URL layout. Everything below is
 for 1.1.0 unless noted. The old `pub-f0ad...r2.dev` URLs in the local docs now return **HTTP 401** [M]
 (the r2.dev dev URL was disabled per ADR 0005).
@@ -167,7 +167,7 @@ PLAIN id columns. No key/value metadata.
 ## 3. Remote query latency (duckdb 1.5.5 CLI over HTTPS, as a proxy for DuckDB-WASM) [M]
 
 Each query ran in a fresh process (cold, no local cache), mostly `threads=1` to match the WASM console.
-Requests and bytes come from DuckDB's HTTP log. Harness: [clinvar-gkm-bench/run2.sh](clinvar-gkm-bench/run2.sh); raw logs were in a scratch directory
+Requests and bytes come from DuckDB's HTTP log. The harness, a script running each query in a fresh DuckDB process with HTTP logging, isn't kept in the repository; raw logs were in a scratch directory
 (not kept).
 
 | Query | Threads | Wall | Requests | MB read | Notes |
@@ -250,7 +250,7 @@ file, built in about 30 s with a 5 GB peak) answers per-variant / per-condition 
 ### Gaps for ClinVar Miner-style features
 - **Per-release history:** Parquet is latest-only, overwritten weekly. History exists only as JSON bundles from
   **2026-07** onward (monthlies + weekly deltas); weekly fulls are deleted at month end. No SCV/VCV change log in
-  Parquet. Upstream BigQuery does have temporal tables built by `~/dev/clinvar-ingest-bq-tools/scripts/temporal-table-procs/`
+  Parquet. Upstream BigQuery does have temporal tables built by clingen-data-model/clinvar-ingest-bq-tools (`scripts/temporal-table-procs/`)
   (clinvar_scvs, clinvar_vcvs, var-scv-change, ...), but they are not published [M: files exist; I: not public].
 - **VCV/RCV dates missing:** the VCV/RCV statement JSON (I read VCV000000010.141-G-PATH) carries no date last
   evaluated, last updated or created. Only SCVs have dates [M].
@@ -270,7 +270,7 @@ file, built in about 30 s with a 5 GB peak) answers per-variant / per-condition 
 ---
 
 ## 5. Local / upstream repo pointers
-- `~/dev/clinvar-gkm` (stale local; upstream main 2026-10-23 is current): pipeline = BigQuery stored
+- clingen-data-model/clinvar-gkm (a local clone was stale; upstream main 2026-10-23 is current): pipeline = BigQuery stored
   procedures (`src/procedures/gkm-*-proc.sql`) over clinvar-ingest datasets -> `gkm_dict_*` tables ->
   `src/scripts/export-gkm-dicts.sh` (`EXPORT DATA` Parquet + NDJSON) -> local DuckDB merge (SNAPPY, unsorted)
   -> R2 upload. Typed Parquet column SQL: `src/scripts/parquet-schemas/*.sql`. Upstream added
@@ -281,9 +281,9 @@ file, built in about 30 s with a 5 GB peak) answers per-variant / per-condition 
   `docs/parquet/tables.md`, `docs/parquet/joining.md`, `docs/superpowers/plans/2026-10-17-variant-sorted-parquet.md`
   (lookup files), `docs/superpowers/plans/2026-10-16-parquet-followups.md` (D1 rate limit, C1-C4),
   `docs/decisions/0005-r2-custom-domain-and-cdn.md`, `0008`, `0009`, `docs/reference/roadmap.md`.
-- `~/dev/clinvar-gk-python`: VRS normalization of ClinVar variants (weekly "noliftover" runs).
-- `~/dev/gkm-starter-kit`: `ga4gh.gkm` Python package + vignettes for loading GKM bundles.
-- `~/dev/clinvar-ingest`: XML -> BigQuery ingest. `~/dev/clinvar-ingest-bq-tools`: BigQuery JS UDFs + temporal
+- clingen-data-model/clinvar-gk-python: VRS normalization of ClinVar variants (weekly "noliftover" runs).
+- ga4gh/gkm-starter-kit: `ga4gh.gkm` Python package + vignettes for loading GKM bundles.
+- clingen-data-model/clinvar-ingest: XML -> BigQuery ingest. clingen-data-model/clinvar-ingest-bq-tools: BigQuery JS UDFs + temporal
   /tracker procedures (history tables).
 
 ## 6. Implications (inference) [I]

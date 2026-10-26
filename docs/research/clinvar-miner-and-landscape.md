@@ -3,7 +3,7 @@
 Prepared 2026-10-24 for the ClinVar-GKM browser project.
 
 Labels used below:
-- **[code]**: verified by reading `~/dev/clinvar-miner` (git HEAD `eb7da45`, 2024-02-15).
+- **[code]**: verified by reading a local clone of eilbecklab/clinvar-miner (git HEAD `eb7da45`, 2024-02-15).
 - **[src]**: verified from a cited web source.
 - **[inf]**: my inference or judgement.
 
@@ -209,7 +209,7 @@ These are shared across pages through `include/filter.html`. Each page shows onl
 
 ### 1.9 Local clone is stale; the project is not dead [src, verified via GitHub API 2026-10-24]
 
-The local clone at `~/dev/clinvar-miner` stops at `eb7da45` (2024-02-15/16).
+The local clone of eilbecklab/clinvar-miner stops at `eb7da45` (2024-02-15/16).
 
 **Upstream `eilbecklab/clinvar-miner`** has 8 more commits:
 - 2026-01: always import in parallel, new significance terms, "Ensure tables are created".

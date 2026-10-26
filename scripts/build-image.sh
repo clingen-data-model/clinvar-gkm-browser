@@ -3,13 +3,17 @@
 # The data image is built once per release and reused, so a code change rebuilds and pushes only
 # the app's small layers.
 #
-# Usage: scripts/build-image.sh [--push] [release]   (default: the newest derived release)
+# Usage: CLINVAR_GKM_BROWSER_PROJECT=<project> scripts/build-image.sh [--push] [release]
+#   (default release: the newest derived one; CLINVAR_GKM_BROWSER_REGION defaults to us-east1)
 # Tags: <registry>/clinvar-gkm-data:<release>-<derived> and <registry>/clinvar-gkm-browser:<release>-<commit>,
 # where <derived> is when the release was derived (its manifest's loaded_at), so deriving a release
 # again (say, with a new table) makes a new data image rather than reusing the old one.
 set -euo pipefail
 
-REGISTRY="${CLINVAR_IMAGE_REGISTRY:-us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser}"
+# The Google Cloud project holding the Artifact Registry repository. Required: it isn't recorded here.
+PROJECT="${CLINVAR_GKM_BROWSER_PROJECT:?set CLINVAR_GKM_BROWSER_PROJECT to the Google Cloud project to build for}"
+REGION="${CLINVAR_GKM_BROWSER_REGION:-us-east1}"
+REGISTRY="$REGION-docker.pkg.dev/$PROJECT/clinvar-gkm-browser"
 PLATFORM="${CLINVAR_IMAGE_PLATFORM:-linux/amd64}"
 DATA_DIR="${CLINVAR_DATA_DIR:-./data}"
 NODE_VERSION=26.10.0

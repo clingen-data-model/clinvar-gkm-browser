@@ -1,6 +1,6 @@
 # ClinVar GKM browser: stack
 
-Status: draft, 24 October 2026. Languages, frameworks and tooling. The starting point is the gencc rewrite (`~/dev/gencc/gencc`), whose stack has worked well; notes on it, and on what to copy or leave behind, are in [research/gencc-stack.md](research/gencc-stack.md). Where we differ from gencc, the reason is given.
+Status: draft, 24 October 2026. Languages, frameworks and tooling. The stack is similar to the one used for the GenCC website rewrite, which has worked well; notes on it, and on what to copy or leave behind, are in [research/gencc-stack.md](research/gencc-stack.md). Where we differ from gencc, the reason is given.
 
 | Area | Choice | Status | Notes |
 | --- | --- | --- | --- |

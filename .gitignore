@@ -13,5 +13,7 @@ playwright-report/
 /data/
 *.duckdb
 *.duckdb.wal
-docs/research/clinvar-gkm-bench/logs/
+# One-off research tools, kept locally and not published
+docs/research/clinvar-gkm-bench/
+docs/research/clinvar-miner-build-subset.py
 logs/

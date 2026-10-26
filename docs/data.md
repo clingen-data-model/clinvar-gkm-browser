@@ -8,7 +8,7 @@ Status: draft, 24 October 2026. The source data the app reads, the derived table
 - **Parquet:** 22 files, 13.2 GB, at `v1/1.1/parquet/`, with a `manifest.json`. Rebuilt from each weekly ClinVar release and overwritten in place, so there are no dated parquet copies. The latest at the time of writing was the 2026-10-18 release, built 2026-10-22.
 - **JSON:** monthly full bundles (about 4.7 GB gzipped), weekly fulls kept for the current month, and weekly JSON deltas (2–150 MB) with manifests. History starts 2026-07.
 - **Physical layout:** written by DuckDB 1.5.4, SNAPPY, row groups of about 122,880 rows, not sorted by anything. IDs are prefixed strings (`clinvar:10`, `clinvar.submission:SCV000020176.2`). A JSON `data` column holding the whole GA4GH object is 60–70% of each big file.
-- **Our local clone of `~/dev/clinvar-gkm` is stale** (last commit 2026-08-24). Read upstream `main` for current docs, especially `docs/parquet/performance.md`, `docs/parquet/joining.md` and `docs/superpowers/plans/2026-10-17-variant-sorted-parquet.md`.
+- **Read upstream `main` of clingen-data-model/clinvar-gkm** for current docs (a clone from 2026-08-24 was already stale), especially `docs/parquet/performance.md`, `docs/parquet/joining.md` and `docs/superpowers/plans/2026-10-17-variant-sorted-parquet.md`.
 
 ### Tables that matter
 
@@ -112,7 +112,7 @@ These stay small because most records don't change between releases. Timelines, 
 **Sources, in order of preference:**
 1. **Going forward:** each install appends to its interval tables from every release it derives. This needs no upstream change, but an install only has history from the day it started. A shared history needs one of the sources below, published for installs to download.
 2. **2026-07 onward:** replay ClinVar-GKM's monthly bundles and weekly JSON deltas.
-3. **Before 2026-07:** either the BigQuery temporal tables built by `~/dev/clinvar-ingest-bq-tools/scripts/temporal-table-procs/` (not public; would be a one-off export), or NCBI's archived tab-delimited `submission_summary` and `variant_summary` files, back to 2014. The tab-delimited files lack GA4GH structure but carry what the history tables track. Either way this is a one-off backfill, recorded as an exception to "ClinVar-GKM is the input".
+3. **Before 2026-07:** either the BigQuery temporal tables built by clingen-data-model/clinvar-ingest-bq-tools (`scripts/temporal-table-procs/`) (not public; would be a one-off export), or NCBI's archived tab-delimited `submission_summary` and `variant_summary` files, back to 2014. The tab-delimited files lack GA4GH structure but carry what the history tables track. Either way this is a one-off backfill, recorded as an exception to "ClinVar-GKM is the input".
 
 ## Asks of ClinVar-GKM
 

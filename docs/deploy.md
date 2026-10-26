@@ -24,29 +24,31 @@ Startup takes seconds: nothing to download, nothing to derive.
 3. **Push** with `scripts/build-image.sh --push` (from a clean, committed tree).
 4. **Deploy** the pushed app image to the Cloud Run service (below).
 
-### The dev service (clingen-dev, us-east1)
+### The dev service (us-east1)
 
-Images: `us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:<release>-<commit>`. Pushing needs podman logged in: `gcloud auth print-access-token | podman login -u oauth2accesstoken --password-stdin us-east1-docker.pkg.dev`.
+The commands below use `$PROJECT` for the Google Cloud project and `$PROJECT_NUMBER` for its number (`gcloud projects describe $PROJECT --format='value(projectNumber)'`). `scripts/build-image.sh` reads the project from `CLINVAR_GKM_BROWSER_PROJECT` and stops if it isn't set.
+
+Images: `us-east1-docker.pkg.dev/$PROJECT/clinvar-gkm-browser/clinvar-gkm-browser:<release>-<commit>`. Pushing needs podman logged in: `gcloud auth print-access-token | podman login -u oauth2accesstoken --password-stdin us-east1-docker.pkg.dev`.
 
 ```sh
 # Deploy (or update) the service, behind IAP: Google sign-in, no code in the app.
-gcloud run deploy clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
-  --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-be1c056 \
-  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=3 --cpu-boost \
-  --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-522856288592.us-east1.run.app \
+gcloud run deploy clinvar-gkm-browser --project=$PROJECT --region=us-east1 \
+  --image=us-east1-docker.pkg.dev/$PROJECT/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-be1c056 \
+  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=1 --max-instances=3 --cpu-boost \
+  --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-$PROJECT_NUMBER.us-east1.run.app \
   --no-allow-unauthenticated --iap
 
 # Once: let IAP call the service.
-gcloud run services add-iam-policy-binding clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
-  --member=serviceAccount:service-522856288592@gcp-sa-iap.iam.gserviceaccount.com --role=roles/run.invoker
+gcloud run services add-iam-policy-binding clinvar-gkm-browser --project=$PROJECT --region=us-east1 \
+  --member=serviceAccount:service-$PROJECT_NUMBER@gcp-sa-iap.iam.gserviceaccount.com --role=roles/run.invoker
 
 # Per person or group: who may sign in.
-gcloud iap web add-iam-policy-binding --project=clingen-dev --resource-type=cloud-run \
+gcloud iap web add-iam-policy-binding --project=$PROJECT --resource-type=cloud-run \
   --service=clinvar-gkm-browser --region=us-east1 \
   --member=user:someone@broadinstitute.org --role=roles/iap.httpsResourceAccessor
 ```
 
-The URL is https://clinvar-gkm-browser-522856288592.us-east1.run.app. IAP's Google-managed sign-in admits accounts in the project's organization; collaborators with other accounts need a custom OAuth client configured in IAP (still no app code). Setup reference: [Configure IAP for Cloud Run](https://docs.cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run).
+The URL is `https://clinvar-gkm-browser-$PROJECT_NUMBER.us-east1.run.app`. IAP's Google-managed sign-in admits accounts in the project's organization; collaborators with other accounts need a custom OAuth client configured in IAP (still no app code). Setup reference: [Configure IAP for Cloud Run](https://docs.cloud.google.com/run/docs/securing/identity-aware-proxy-cloud-run).
 
 ### Cloud Run settings
 
@@ -56,7 +58,7 @@ The URL is https://clinvar-gkm-browser-522856288592.us-east1.run.app. IAP's Goog
 | `DUCKDB_MEMORY_LIMIT` | about half the instance's memory | Spill files (`/data/tmp`) also count against the instance's memory |
 | `DUCKDB_THREADS` | the vCPU count | Don't rely on detecting it |
 | `CLINVAR_ALLOWED_HOSTS` | the service's run.app host names (and a custom domain, if any) | The Host check refuses any other name |
-| Minimum instances | 0 for dev | Costs nothing idle; a cold start takes a few seconds |
+| Minimum instances | 1 for dev (since 26 October 2026) | Avoids cold starts. A minimum instance is billed while idle, at Cloud Run's lower idle rate (roughly $2.60 a day at 4 vCPU and 8 GiB); to be checked on the bill. 0 costs nothing idle, and a cold start takes a few seconds |
 | Maximum instances | 3 for dev | Bounds cost. Request-based billing charges only while requests run, so more instances cost little more; but each new instance reads its data cold (image streaming), and one Conflicts tab can push CPU high enough to start another |
 | Concurrency | low (around 10) | A DuckDB query uses every core |
 | Access | IAP, limited to the team's Google accounts | The app has no login and isn't hardened for anonymous traffic |

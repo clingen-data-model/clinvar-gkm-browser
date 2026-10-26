@@ -4,7 +4,7 @@ Prepared 2026-10-25 for the ClinVar GKM browser project.
 
 Labels:
 - **[obs]**: observed in the running app, in its SQLite DB, or in command output.
-- **[code]**: read in the fork's source (`~/dev/clinvar-miner-fork`, HEAD `2a63bb1`, 2026-10-23).
+- **[code]**: read in a local clone of the fork, alexhenrie/clinvar-miner (HEAD `2a63bb1`, 2026-10-23).
 - **[inf]**: my inference.
 
 The crawl took 86 full-page screenshots; eight of the most useful are kept, cropped and compressed, in [clinvar-miner-shots/](clinvar-miner-shots/). The rest, and the per-page crawl results, were working files and aren't kept.
@@ -31,8 +31,8 @@ Other requirements [code + obs]:
 ### 1.2 Exact steps I ran
 
 ```bash
-git clone https://github.com/alexhenrie/clinvar-miner ~/dev/clinvar-miner-fork     # HEAD 2a63bb1
-cd ~/dev/clinvar-miner-fork
+git clone https://github.com/alexhenrie/clinvar-miner clinvar-miner-fork     # HEAD 2a63bb1
+cd clinvar-miner-fork
 uv venv --python /opt/homebrew/bin/python3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt                       # .venv = 29 MB
 mkdir data-local
@@ -56,7 +56,7 @@ I skipped `prune-old-clinvar-versions.sh` because the DB held one date. I made *
 
 I deleted that sample.
 
-**What I used: NCBI E-utilities, gene-targeted, all RCVs per variant.** The script is [clinvar-miner-build-subset.py](clinvar-miner-build-subset.py), run with system `python3 -I`, standard library only.
+**What I used: NCBI E-utilities, gene-targeted, all RCVs per variant.** The script (esearch, then esummary for RCV accessions, then efetch of the ClinVarSet records; not kept in the repository) ran with system `python3 -I`, standard library only.
 1. `esearch db=clinvar term="<GENE>[gene]"` (optionally `AND clinsig_has_conflicts[prop]`) gives variation IDs.
 2. `esummary retmode=json` gives `supporting_submissions.rcv`, which is every RCV of each variant.
    - esummary refuses JSON over 10 MB, which happened on G6PD's large CNVs. The script bisects the batch on that error.
@@ -100,17 +100,17 @@ For the release-selector demo I **re-imported the same XML relabelled `Dated="20
 5. `/total-submissions-by-country/` (blank code, "unspecified") returns 404 here, because every submitter in the sample has a country.
 6. No server errors (5xx) in `data-local/app.log` across about 160 requests. Pages took 0.5 to 1.4 s each on this small DB.
 
-The app is stopped and nothing is left running. `~/dev/clinvar-miner` (upstream clone, `eb7da45`) was not touched.
+The app is stopped and nothing is left running. The clone of upstream eilbecklab/clinvar-miner (`eb7da45`) was not touched.
 
 What is left on disk:
-- `~/dev/clinvar-miner-fork/clinvar.db` (647 MB), `.venv`, and `mondo.owl` → `data-local/mondo.owl`
+- `clinvar-miner-fork/clinvar.db` (647 MB), `.venv`, and `mondo.owl` → `data-local/mondo.owl`
 - `data-local/`, 608 MB: the subset XML, mondo.owl, org summary, logs and per-gene RCV caches
 
 ---
 
 ## 2. Fork vs the old upstream clone
 
-The clone `~/dev/clinvar-miner` at `eb7da45` (2024-02-15) is a direct ancestor of the fork. The fork has **23 commits** since then, 2026-01-16 to 2026-10-23, all by Alex Henrie. `git diff --stat`: 18 files, +1263 / −429. About 1,186 of those lines are `submitter_info.tsv`.
+Upstream eilbecklab/clinvar-miner at `eb7da45` (2024-02-15) is a direct ancestor of the fork. The fork has **23 commits** since then, 2026-01-16 to 2026-10-23, all by Alex Henrie. `git diff --stat`: 18 files, +1263 / −429. About 1,186 of those lines are `submitter_info.tsv`.
 
 ### Data and import
 - **New-format RCV XML only** (`7887147`, 2026-06-21).

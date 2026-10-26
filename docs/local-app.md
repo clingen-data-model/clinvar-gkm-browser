@@ -90,7 +90,7 @@ A user uploads a list, the app matches it against ClinVar, and the results becom
   - normalizing uploads the same way, which needs the reference sequence for indels that aren't already left-aligned;
   - GRCh37 uploads, which need liftover or a GRCh37 key;
   - the 1,132 alleles without a key.
-  VRS normalization (`vrs-python`, `~/dev/vrs-rust`) is a fallback, not the main path. Decide the details in M3.
+  VRS normalization (`vrs-python`, or theferrit32/vrs-rust) is a fallback, not the main path. Decide the details in M3.
 - **Storage:** uploaded lists and their matches go in `workspace/` and stay there until the user deletes them. They are never sent to any outside service: no external annotation APIs are called with list contents.
 - **Output:** the matched list joins every page's filters ("only variants in my list") and the SQL console (as a table), and exports with ClinVar data added.
 

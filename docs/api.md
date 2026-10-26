@@ -278,7 +278,7 @@ Each tab or page is a few requests to these endpoints; `{X}`, `{Y}` are submitte
 
 1. **Derivation:** `scv.condition_ids`, `scv.condition_unspecified`, `condition.placeholder`. Rebuild the release and the fixture.
 2. **Shared query model:** side-prefixed filters, pair options, side-aware dimensions, the conflict-level SQL function, `match`. Unit tests for each.
-3. **`/scv-pairs` and `/scv-pairs/summary`,** then **`/variants` and `/variants/summary`.** API tests against the fixture, which has conflicting HFE variants. Spot checks against ClinVar Miner running on the same genes (`~/dev/clinvar-miner-fork`), allowing for the known differences (somatic separated, flagged excluded, placeholder conditions).
+3. **`/scv-pairs` and `/scv-pairs/summary`,** then **`/variants` and `/variants/summary`.** API tests against the fixture, which has conflicting HFE variants. Spot checks against ClinVar Miner running locally on the same genes (alexhenrie/clinvar-miner), allowing for the known differences (somatic separated, flagged excluded, placeholder conditions).
 4. **`format=tsv`** for lists and summaries.
 5. **Web:** submitter Conflicts tab, head-to-head page, gene and condition Conflicts tabs, then the Overview tabs, index pages, explorer and presets.
 
