@@ -18,3 +18,12 @@ export class SqlParams {
     return values.map((v) => this.add(v)).join(', ');
   }
 }
+
+/**
+ * A select list of a table's columns under their own names: `s.scv_id AS scv_id, ...`. Every
+ * column is aliased, so result names never depend on how an engine names a qualified column
+ * (some keep the qualifier in joins).
+ */
+export function qualifiedColumns(table: string, columns: readonly string[]): string {
+  return columns.map((c) => `${table}.${c} AS ${c}`).join(', ');
+}

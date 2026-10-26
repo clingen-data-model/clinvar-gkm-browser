@@ -46,7 +46,9 @@ The concrete DDL, load and measurements are in [schema.md](schema.md); this sect
 - **Flatten nested fields into typed columns:** review status (an entry in an `extensions` array upstream), derived stars, classification, dates (entries in `contributions`), collection method.
 - **Re-key and sort:** integer IDs instead of prefixed strings (`clinvar.submission:SCV000020176.2`), and each table sorted by its main lookup key so DuckDB's per-block statistics skip irrelevant rows.
 
-Duplicating values across tables (e.g. a variant's gene IDs or aggregate classification copied onto each SCV) is added only where M0 shows a canonical query needs it. The upstream tables stay available unchanged, as views over the downloaded parquet, for the SQL console and for fields the derived tables don't extract. The upstream tables, keys and joins are described in [source-schema.md](source-schema.md).
+Duplicating values across tables (e.g. a variant's gene IDs or aggregate classification copied onto each SCV) is added only where M0 shows a canonical query needs it.
+
+**When to add a derived table (decided 26 October 2026):** the app serves DuckDB over the derived parquet, and stays fast by adding a derived table where a common query keeps redoing work that doesn't depend on the request. The work is done once per release in the derivation, and the request filters the stored result instead. `scv_classification_pair` is the model ([Conflicts](#conflicts)). A request then only filters and aggregates; it doesn't join large tables or rebuild the same intermediate result. We measured the alternatives on the conflict pages (a DuckDB database file, SQLite, ClickHouse with native tables). Per-request rebuilding was the cost in every engine, and the stored table was the bigger win than any engine change. The ClickHouse experiment is kept on the `clickhouse` branch. The upstream tables stay available unchanged, as views over the downloaded parquet, for the SQL console and for fields the derived tables don't extract. The upstream tables, keys and joins are described in [source-schema.md](source-schema.md).
 
 The derived tables don't copy upstream's `data` column (each row's full GA4GH JSON); every field they need is in the typed columns. How detail views and JSON export get the full record is open ([source-schema.md](source-schema.md#what-to-do-with-data)). Table names and columns are a first draft, to be refined in M0.
 
@@ -80,7 +82,13 @@ We keep ClinVar Miner's conflict scale, which is finer than ClinVar's three-grou
 
 - By default a pair counts only when both SCVs share a MONDO-normalized condition; a filter turns that off. This is ClinVar Miner's default.
 - VUS sub-tiers are significance 1, like VUS, so they never make a level 3 or 5 conflict with it, only level 2.
-- **Storage:** ClinVar Miner stored every pair, including each SCV paired with itself, for every release; at 0.58M SCVs that was 31.8 GiB. We store SCVs once. Pairs come from either a narrow pairs table (variant, two SCV numbers, two submitter IDs, level, same-condition flag) restricted to variants with two or more SCVs in a lane, or a per-query self-join of `scv`, which DuckDB handles well for one gene or one submitter. M0 measures both.
+- **Storage (decided 26 October 2026): stored pairs.** ClinVar Miner stored every pair, including each SCV paired with itself, for every release; at 0.58M SCVs that was 31.8 GiB. We store each ordered pair of different SCVs once per release in `scv_classification_pair`: 15.3M rows, 164 MB of parquet, built in seconds by the derivation. Each row carries both SCV ids, both submitters, terms, review statuses, submission levels, collection methods and dates, the pair's level, and two condition flags (they share a condition; either's condition is unspecified). The per-request options are filters on those columns:
+  - the condition rule;
+  - flagged exclusion;
+  - side filters;
+  - different submitters.
+
+  No join is needed. Building pairs per query (a self-join of `scv`) was correct but did the same work on every request, several times per page. Labcorp's scorecard took 0.46 s that way and 0.13 s with stored pairs; its term grid and labs table went from about 0.35 s to 0.06 s; and responses were identical on 29 compared requests.
 - NCBI publishes its own pairwise file monthly, `summary_of_conflicting_interpretations.txt` (about 2 GB). We can check our levels against its `Rank_diff`, but we don't depend on it: it isn't part of ClinVar-GKM and it's monthly, not weekly.
 
 ## Releases

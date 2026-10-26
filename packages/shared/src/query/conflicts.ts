@@ -4,7 +4,18 @@
 // pairs and agrees.
 
 import { z } from 'zod';
+import type { AppliedFilter, FilterOptions } from './filters.ts';
 import type { SqlParams } from './sql.ts';
+import { PAIR_SIDE_COLUMNS, pairFilterWhere } from './where.ts';
+
+export { PAIR_SIDE_COLUMNS } from './where.ts';
+
+/** What the pair CTE needs from a parsed query. */
+export interface PairInput {
+  filters: readonly AppliedFilter[];
+  filterOptions: FilterOptions;
+  pair: PairOptions;
+}
 
 /** ClinVar Miner's conflict scale, on ClinGen's significance groups (bq-tools). */
 export const CONFLICT_LEVELS = [
@@ -65,62 +76,37 @@ export interface PairOptions {
   directed: boolean;
 }
 
-/** A pair's conflict level from its two SCVs (`a`, `b`) and their terms (`ta`, `tb`). */
-const LEVEL_SQL = `CASE
-    WHEN ta.significance IS NULL OR tb.significance IS NULL THEN NULL
-    WHEN (ta.significance = 2) <> (tb.significance = 2) THEN 5
-    WHEN ta.significance <> tb.significance THEN 3
-    WHEN a.term <> b.term THEN 2
-    WHEN lower(a.classification) <> lower(b.classification) THEN 1
-    ELSE 0
-  END`;
-
-const CONDITION_SQL: Record<ConditionMatch, string> = {
-  strict: 'list_has_any(a.condition_ids, b.condition_ids)',
-  wildcard:
-    '(a.condition_unspecified OR b.condition_unspecified OR list_has_any(a.condition_ids, b.condition_ids))',
-  any: 'true',
-};
-
-/** The SCV columns a pair carries for each side, as a_<column> and b_<column>. */
-export const PAIR_SIDE_COLUMNS = [
-  'scv_id',
-  'submitter_id',
-  'term',
-  'classification',
-  'review_status',
-  'submission_level',
-  'collection_methods',
-  'date_last_evaluated',
-  'date_submitted',
-] as const;
-
-const SIDE_SELECT = `s.scv_id, s.variation_id, s.submitter_id, s.classification_type, s.term,
-  s.classification, s.review_status, s.submission_level, s.collection_methods,
-  s.date_last_evaluated, s.date_submitted, s.condition_ids, s.condition_unspecified`;
-
 /**
- * CTEs side_a, side_b and pairs. `whereA` and `whereB` are each side's filters over `scv s`.
- * Only conflict-detectable classification types pair (pathogenicity, oncogenicity).
+ * CTE pairs: the stored pairs (scv_classification_pair, built by the derivation with each pair's
+ * level and condition flags) that the request compares, as a filtered read with no join. Its
+ * columns: variation_id, classification_type, level, and a_/b_ for each of PAIR_SIDE_COLUMNS.
  */
-export function pairCtes(whereA: string, whereB: string, options: PairOptions): string {
-  const flagged = options.excludeFlagged ? ` AND s.submission_level <> 'FLAG'` : '';
-  const detectable = ` AND s.classification_type IN (SELECT code FROM classification_type WHERE conflict_detectable)`;
-  const order = options.directed
-    ? 'a.scv_id <> b.scv_id'
-    : `(coalesce(a.term, '') < coalesce(b.term, '')
-        OR (coalesce(a.term, '') = coalesce(b.term, '') AND a.scv_id < b.scv_id))`;
-  const submitters = options.distinctSubmitters ? ' AND a.submitter_id <> b.submitter_id' : '';
-  const sides = (x: 'a' | 'b') => PAIR_SIDE_COLUMNS.map((c) => `${x}.${c} AS ${x}_${c}`).join(', ');
-  return `side_a AS (SELECT ${SIDE_SELECT} FROM scv s WHERE (${whereA})${flagged}${detectable}),
-    side_b AS (SELECT ${SIDE_SELECT} FROM scv s WHERE (${whereB})${flagged}${detectable}),
-    pairs AS (
-      SELECT a.variation_id, a.classification_type, ${LEVEL_SQL} AS level, ${sides('a')}, ${sides('b')}
-      FROM side_a a
-      JOIN side_b b ON b.variation_id = a.variation_id AND b.classification_type = a.classification_type
-      LEFT JOIN classification_term ta ON ta.classification_type = a.classification_type AND ta.term = a.term
-      LEFT JOIN classification_term tb ON tb.classification_type = b.classification_type AND tb.term = b.term
-      WHERE ${order}${submitters} AND ${CONDITION_SQL[options.conditionMatch]}
+export function pairCtes(input: PairInput, params: SqlParams): string {
+  const options = input.pair;
+  const where = [
+    pairFilterWhere(input.filters, input.filterOptions, params, 'a'),
+    pairFilterWhere(input.filters, input.filterOptions, params, 'b'),
+  ];
+  if (options.conditionMatch === 'strict') where.push('p.same_condition');
+  if (options.conditionMatch === 'wildcard') {
+    where.push('(p.same_condition OR p.unspecified_condition)');
+  }
+  if (options.excludeFlagged) {
+    where.push(`p.a_submission_level <> 'FLAG'`, `p.b_submission_level <> 'FLAG'`);
+  }
+  if (options.distinctSubmitters) where.push('p.a_submitter_id <> p.b_submitter_id');
+  // Both orders are stored; without sides, keep one, A having the lower term (then SCV id).
+  if (!options.directed) {
+    where.push(`(coalesce(p.a_term, '') < coalesce(p.b_term, '')
+      OR (coalesce(p.a_term, '') = coalesce(p.b_term, '') AND p.a_scv_id < p.b_scv_id))`);
+  }
+  const sides = (x: 'a' | 'b') =>
+    PAIR_SIDE_COLUMNS.map((c) => `p.${x}_${c} AS ${x}_${c}`).join(', ');
+  return `pairs AS (
+      SELECT p.variation_id AS variation_id, p.classification_type AS classification_type,
+             p.level AS level, ${sides('a')}, ${sides('b')}
+      FROM scv_classification_pair p
+      WHERE ${where.join('\n        AND ')}
     )`;
 }
 
@@ -141,20 +127,24 @@ export function pairLevelWhere(options: PairOptions, params: SqlParams): string 
 /**
  * CTE statuses: each variant (and classification type) with an SCV matching side A's filters, in
  * CTE `members`, and its conflict status against side B: `single` (no partner), `none` (all
- * agree), its highest pair level '1' to '5', or `na` for a type that never conflicts.
+ * agree), its highest pair level '1' to '5', or `na` for a type that never conflicts. The pairs
+ * are reduced to one row per variant first, so the join to members is with that, not every pair.
  */
-export const STATUS_CTE = `statuses AS (
-    SELECT m.variation_id, m.classification_type,
+export const STATUS_CTE = `pair_status AS (
+    SELECT variation_id, classification_type, max(level) AS max_level, count(level) AS pair_count
+    FROM pairs GROUP BY variation_id, classification_type
+  ),
+  statuses AS (
+    SELECT m.variation_id AS variation_id, m.classification_type AS classification_type,
            CASE WHEN NOT t.conflict_detectable THEN 'na'
-                WHEN max(p.level) IS NULL THEN 'single'
-                WHEN max(p.level) = 0 THEN 'none'
-                ELSE max(p.level)::VARCHAR END AS conflict_level,
-           coalesce(max(p.level), -1) AS level_rank,
-           count(p.level)::INTEGER AS pair_count
+                WHEN ps.max_level IS NULL THEN 'single'
+                WHEN ps.max_level = 0 THEN 'none'
+                ELSE ps.max_level::VARCHAR END AS conflict_level,
+           coalesce(ps.max_level, -1) AS level_rank,
+           coalesce(ps.pair_count, 0)::INTEGER AS pair_count
     FROM members m
     JOIN classification_type t ON t.code = m.classification_type
-    LEFT JOIN pairs p ON p.variation_id = m.variation_id AND p.classification_type = m.classification_type
-    GROUP BY m.variation_id, m.classification_type, t.conflict_detectable
+    LEFT JOIN pair_status ps ON ps.variation_id = m.variation_id AND ps.classification_type = m.classification_type
   )`;
 
 /** WHERE over statuses for the level options (minLevel: '1'..'5' at or above). */

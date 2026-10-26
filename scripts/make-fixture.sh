@@ -43,6 +43,8 @@ CREATE TABLE scv_citation AS SELECT * FROM src_scv_citation WHERE scv_id IN (SEL
 CREATE TABLE scv_condition AS SELECT * FROM src_scv_condition WHERE scv_id IN (SELECT scv_id FROM scv) ORDER BY scv_id, condition_id;
 CREATE TABLE scv_submitted_condition AS SELECT * FROM src_scv_submitted_condition WHERE scv_id IN (SELECT scv_id FROM scv) ORDER BY scv_id, ordinal;
 CREATE TABLE scv_somatic_impact AS SELECT * FROM src_scv_somatic_impact WHERE scv_id IN (SELECT scv_id FROM scv);
+CREATE TABLE scv_classification_pair AS SELECT * FROM src_scv_classification_pair WHERE variation_id IN (FROM pick)
+  ORDER BY a_submitter_id, variation_id, a_scv_id, b_scv_id;
 CREATE TABLE condition_set AS SELECT * FROM src_condition_set WHERE condition_set_key IN (
   SELECT condition_set_key FROM scv UNION SELECT condition_set_key FROM vcv_statement
   UNION SELECT condition_set_key FROM rcv_statement UNION SELECT via_condition_set_key FROM scv_condition);

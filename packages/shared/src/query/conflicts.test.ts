@@ -63,22 +63,35 @@ describe('side filters and pair options', () => {
 });
 
 describe('pair SQL', () => {
-  it('matches conditions by the chosen rule', () => {
+  it('matches conditions by the chosen rule, from the stored flags', () => {
     const sql = (condition_match: string) =>
       compileSummaryRows(parsed({ group_by: 'conflict_level', condition_match }, 'pairs')).sql;
-    expect(sql('strict')).toContain('list_has_any(a.condition_ids, b.condition_ids)');
-    expect(sql('wildcard')).toContain('a.condition_unspecified OR b.condition_unspecified');
-    expect(sql('any')).not.toContain('list_has_any');
+    expect(sql('strict')).toContain('p.same_condition');
+    expect(sql('strict')).not.toContain('p.unspecified_condition');
+    expect(sql('wildcard')).toContain('(p.same_condition OR p.unspecified_condition)');
+    expect(sql('any')).not.toContain('same_condition');
   });
 
-  it('pairs each SCV once without sides, and directs them with sides', () => {
+  it('reads stored pairs: one order without sides, both with them', () => {
     const undirected = compileSummaryRows(parsed({ group_by: 'conflict_level' }, 'pairs')).sql;
-    expect(undirected).toContain('a.scv_id < b.scv_id');
+    expect(undirected).toContain('FROM scv_classification_pair p');
+    expect(undirected).toContain('p.a_scv_id < p.b_scv_id');
     const directed = compileSummaryRows(
       parsed({ group_by: 'b.submitter', 'a.submitter': '1' }, 'pairs'),
     ).sql;
-    expect(directed).toContain('a.scv_id <> b.scv_id');
+    expect(directed).not.toContain('p.a_scv_id < p.b_scv_id');
+    expect(directed).toContain('p.a_submitter_id IN ($');
     expect(directed).toContain('s.b_submitter_id::VARCHAR');
+  });
+
+  it('filters a side by a column pairs lack through scv, as a filter', () => {
+    const sql = compileSummaryRows(
+      parsed({ group_by: 'conflict_level', 'a.comment': 'founder' }, 'pairs'),
+    ).sql;
+    expect(sql).toMatch(
+      /p\.a_scv_id IN \(SELECT s\.scv_id FROM scv s WHERE .*s\.description ILIKE/s,
+    );
+    expect(sql).not.toMatch(/JOIN scv\b/);
   });
 });
 

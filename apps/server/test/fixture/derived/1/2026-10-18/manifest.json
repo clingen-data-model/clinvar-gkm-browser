@@ -4,7 +4,7 @@
   "gkm_schema_version": "1.1.0",
   "gkm_dataset": "clinvar_2026_10_18_v2_6_0",
   "derived_schema": 1,
-  "loaded_at": "2026-10-25 14:32:08.409622",
+  "loaded_at": "2026-10-25 22:47:38.332901",
   "tables": [
     { "name": "allele", "rows": 350 },
     { "name": "classification_term", "rows": 35 },
@@ -22,6 +22,7 @@
     { "name": "review_status", "rows": 14 },
     { "name": "scv", "rows": 1073 },
     { "name": "scv_citation", "rows": 1406 },
+    { "name": "scv_classification_pair", "rows": 26146 },
     { "name": "scv_condition", "rows": 1165 },
     { "name": "scv_somatic_impact", "rows": 59 },
     { "name": "scv_submitted_condition", "rows": 1165 },

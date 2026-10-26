@@ -33,19 +33,19 @@ export async function variantDetail(
          v.variation_id AS "variationId",
          'VCV' || lpad(v.variation_id::VARCHAR, 9, '0') AS "vcvAccession",
          v.vcv_version AS "vcvVersion",
-         v.name,
+         v.name AS name,
          v.clinvar_variation_type AS "variationType",
          v.clinvar_subclass_type AS "subclassType",
          v.cytogenetic_location AS "cytogeneticLocation",
          coalesce(v.vrs_preprocessing_issue, v.vrs_processing_exception) AS "vrsIssue",
-         v.allele_id, v.copy_number_id,
+         v.allele_id AS allele_id, v.copy_number_id AS copy_number_id,
          (SELECT count(*)::INTEGER FROM scv WHERE scv.variation_id = v.variation_id) AS "scvCount"
        FROM variant v WHERE v.variation_id = $1`,
       [variationId],
     ),
     db.query(
       release,
-      `SELECT vg.gene_id AS "geneId", g.symbol, vg.relationship_type AS "relationshipType", vg.source
+      `SELECT vg.gene_id AS "geneId", g.symbol AS symbol, vg.relationship_type AS "relationshipType", vg.source AS source
        FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
        WHERE vg.variation_id = $1 ORDER BY g.symbol`,
       [variationId],
@@ -69,15 +69,17 @@ export async function variantDetail(
       release,
       `SELECT vs.vcv_statement_key AS key, vs.statement_id AS "statementId",
               vs.parent_key AS "parentKey", vs.classification_type AS "classificationType",
-              vs.node_kind AS "nodeKind", vs.submission_level AS "submissionLevel", vs.tier,
-              vs.contributes, vs.classification,
+              vs.node_kind AS "nodeKind", vs.submission_level AS "submissionLevel", vs.tier AS tier,
+              vs.contributes AS contributes, vs.classification AS classification,
               vs.conflicting_explanation AS "conflictingExplanation",
-              vs.review_status AS "reviewStatus", rs.stars,
-              (SELECT count(*)::INTEGER FROM scv
-               WHERE scv.variation_id = vs.variation_id
-                 AND scv.vcv_statement_key = vs.vcv_statement_key) AS "scvCount"
+              vs.review_status AS "reviewStatus", rs.stars AS stars,
+              coalesce(n.scvs, 0)::INTEGER AS "scvCount"
        FROM vcv_statement vs
        LEFT JOIN review_status rs ON rs.status = vs.review_status
+       -- The variant's SCVs per statement, counted once rather than per statement row.
+       LEFT JOIN (SELECT vcv_statement_key, count(*) AS scvs FROM scv
+                  WHERE variation_id = $1 GROUP BY vcv_statement_key) n
+         ON n.vcv_statement_key = vs.vcv_statement_key
        LEFT JOIN classification_type t ON t.code = vs.classification_type
        LEFT JOIN submission_level sl ON sl.code = vs.submission_level
        WHERE vs.variation_id = $1
@@ -115,7 +117,7 @@ async function vrsMember(
       release,
       `SELECT a.allele_id AS id, 'allele' AS kind, sr.accession AS "sequenceAccession",
               l.loc_start::INTEGER AS start, l.loc_end::INTEGER AS "end",
-              a.hgvs_g AS "hgvsG", a.spdi, a.vcf_key AS "vcfKey"
+              a.hgvs_g AS "hgvsG", a.spdi AS spdi, a.vcf_key AS "vcfKey"
        FROM allele a
        LEFT JOIN location l ON l.location_id = a.location_id
        LEFT JOIN sequence_reference sr ON sr.sequence_reference_id = l.sequence_reference_id
@@ -206,7 +208,7 @@ export async function listVariants(
     db.query(
       release,
       `WITH ${base}
-       SELECT s.variation_id, s.classification_type, s.conflict_level, s.pair_count
+       SELECT s.variation_id AS variation_id, s.classification_type AS classification_type, s.conflict_level AS conflict_level, s.pair_count AS pair_count
        FROM base s ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`,
       params.values,
     ),
@@ -226,7 +228,7 @@ export async function listVariants(
     ),
     db.query(
       release,
-      `SELECT vg.variation_id, list(coalesce(g.symbol, 'Gene ' || vg.gene_id) ORDER BY g.symbol)[1:5] AS genes,
+      `SELECT vg.variation_id AS variation_id, list(coalesce(g.symbol, 'Gene ' || vg.gene_id) ORDER BY g.symbol)[1:5] AS genes,
               count(*)::INTEGER AS gene_count
        FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
        WHERE vg.variation_id IN (${inIds}) GROUP BY 1`,
@@ -234,14 +236,14 @@ export async function listVariants(
     ),
     db.query(
       release,
-      `SELECT vs.variation_id, vs.classification_type, vs.classification, vs.review_status, rs.stars
+      `SELECT vs.variation_id AS variation_id, vs.classification_type AS classification_type, vs.classification AS classification, vs.review_status AS review_status, rs.stars AS stars
        FROM vcv_statement vs LEFT JOIN review_status rs ON rs.status = vs.review_status
        WHERE vs.variation_id IN (${inIds}) AND vs.node_kind = 'root'`,
       ids,
     ),
     db.query(
       release,
-      `SELECT s.variation_id, s.classification_type, coalesce(ct.bucket, 'N') AS bucket,
+      `SELECT s.variation_id AS variation_id, s.classification_type AS classification_type, coalesce(ct.bucket, 'N') AS bucket,
               count(*)::INTEGER AS scvs, count(DISTINCT s.submitter_id)::INTEGER AS submitters
        FROM scv s LEFT JOIN classification_term ct
          ON ct.classification_type = s.classification_type AND ct.term = s.term

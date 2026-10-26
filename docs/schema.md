@@ -94,6 +94,7 @@ erDiagram
   scv ||--o{ scv_condition : ""
   condition ||--o{ scv_condition : ""
   scv ||--o| scv_somatic_impact : ""
+  scv ||--o{ scv_classification_pair : ""
 ```
 
 The vocabulary tables (`classification_type`, `submission_level`, `review_status`) and the release metadata (`release`, `source_file`) are left out of the diagram.
@@ -125,6 +126,7 @@ The vocabulary tables (`classification_type`, `submission_level`, `review_status
 | `scv_submitted_condition` | | condition as submitted, with its match | `scv.extensions` `submittedCondition(Set)` |
 | `scv_condition` | (`scv_id`, `condition_id`) | condition the SCV is about, sets expanded | the proposition's object |
 | `scv_somatic_impact` | `scv_id` | somatic clinical impact detail and tier | `evidenceLine` + its target proposition |
+| `scv_classification_pair` | (`a_scv_id`, `b_scv_id`), checked not indexed | every ordered pair of SCVs conflict detection compares, with its level and condition flags ([data.md](data.md#conflicts)) | derived from `scv` |
 
 ### Aggregate statement trees
 
@@ -157,8 +159,9 @@ Every SCV is cited by exactly one VCV node and one RCV node (checked against the
    - the SCV propositions are filtered out of `stage.prop`;
    - the two are joined, with the citing statements and condition sets, sorted by variant, and inserted.
 8. **SCV children:** citations, submitted conditions, the expanded `scv_condition`, and `scv_somatic_impact`.
-9. **Reference checks** (generated from `schema.sql`) fill `reference_issue`.
-10. **`validate.sql`,** then **export** to parquet. The scratch databases are deleted.
+9. **Classification pairs:** `scv_classification_pair`, a self-join of `scv` within each variant and conflict-detectable type, both orders, sorted by side A's submitter then variant. `validate.sql` checks that the count is n×(n−1) per group, that each pair's reverse exists with the same level, and that no pair repeats.
+10. **Reference checks** (generated from `schema.sql`) fill `reference_issue`.
+11. **`validate.sql`,** then **export** to parquet. The scratch databases are deleted.
 
 ## Load performance: what we learned
 
@@ -184,7 +187,7 @@ ClinVar release 2026-10-18, on the development Mac (Apple Silicon, 7 threads, Du
 | Reference checks | 53 relationships, 1.6 s; one issue (below) |
 | `validate.sql` | passes |
 
-- **Row counts:** `variant_hgvs` 43.4M, `rcv_statement` 12.1M, `variant_xref` 10.6M, `vcv_statement` 9.2M, `variant_gene` 7.4M, `scv_submitted_condition` 7.3M, `scv_condition` 7.3M, `scv` 6.85M, `variant` 4.69M, `allele` 4.60M, `location` 4.22M, `scv_citation` 1.64M.
+- **Row counts:** `variant_hgvs` 43.4M, `scv_classification_pair` 15.3M, `rcv_statement` 12.1M, `variant_xref` 10.6M, `vcv_statement` 9.2M, `variant_gene` 7.4M, `scv_submitted_condition` 7.3M, `scv_condition` 7.3M, `scv` 6.85M, `variant` 4.69M, `allele` 4.60M, `location` 4.22M, `scv_citation` 1.64M.
 - **One integrity gap upstream.** 31 SCV propositions name 3 NCBI genes (GLRA4, CCDC144NL, RNU6-81P) missing from upstream's `gene` table. Kept as published and listed in `reference_issue` ([Faithful to upstream](#faithful-to-upstream)). Every other reference resolves. Worth reporting to ClinVar-GKM.
 - **Query times** against these files, for page-style and heavy "miner" queries: 10–300 ms, except free-text comment search at about 1.2 s ([storage eval](research/storage-format-eval.md)).
 

@@ -6,7 +6,7 @@ import { ScvRow } from '@cvb/shared/api';
 import { SqlParams, type ParsedQuery } from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
-import { SCV_ROW_COLUMNS, SCV_ROW_JOINS } from '../scvs/queries.ts';
+import { scvRowColumns, SCV_ROW_JOINS } from '../scvs/queries.ts';
 
 /** Sort keys a pair list accepts. Every sort ends with the pair's identity, for stable pages. */
 const PAIR_SORTS: Record<string, string> = {
@@ -58,7 +58,7 @@ export async function listPairs(
   const limit = params.add(query.limit);
   const offset = params.add(query.offset);
   const pageSql = `WITH ${base}
-    SELECT s.variation_id, s.classification_type, s.level, s.a_scv_id, s.b_scv_id
+    SELECT s.variation_id AS variation_id, s.classification_type AS classification_type, s.level AS level, s.a_scv_id AS a_scv_id, s.b_scv_id AS b_scv_id
     FROM base s ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`;
   let total: Promise<number | null> = Promise.resolve(null);
   if (query.count) {
@@ -82,7 +82,7 @@ export async function listPairs(
   const [scvRows, names] = await Promise.all([
     db.query(
       release,
-      `SELECT ${SCV_ROW_COLUMNS} FROM scv s ${SCV_ROW_JOINS}
+      `SELECT ${scvRowColumns()} FROM scv s ${SCV_ROW_JOINS}
        WHERE s.variation_id IN (${rowParams.list(variants)}) AND s.scv_id IN (${rowParams.list(scvIds)})`,
       rowParams.values,
     ),

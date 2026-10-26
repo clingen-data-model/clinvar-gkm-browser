@@ -500,3 +500,38 @@ CREATE TABLE scv_somatic_impact (
     therapy_group_id        VARCHAR REFERENCES therapy_group (therapy_group_id),
     condition_qualifier_id  INTEGER REFERENCES condition (condition_id)  -- tumor type, therapeutic response only
 );
+
+-- Every ordered pair of SCVs whose classifications conflict detection compares (docs/data.md,
+-- "Conflicts"): two SCVs on the same variant with the same classification type, of a type that can
+-- conflict (classification_type.conflict_detectable: pathogenicity, oncogenicity). Agreements
+-- and pairs from one submitter are included; both orders are stored, so a submitter's comparisons
+-- are the rows with its SCVs on side A. Each row carries what a request filters or groups on, so
+-- the comparison options (condition rule, flagged, side filters) are WHERE clauses on this table,
+-- with no join back to scv. Sorted by side A's submitter, then variant.
+CREATE TABLE scv_classification_pair (
+    a_scv_id               INTEGER  NOT NULL REFERENCES scv (scv_id),
+    b_scv_id               INTEGER  NOT NULL REFERENCES scv (scv_id),
+    variation_id           INTEGER  NOT NULL REFERENCES variant (variation_id),
+    classification_type    VARCHAR  NOT NULL REFERENCES classification_type (code),
+    -- The conflict level, 0 (agree) to 5 (clinically significant); NULL when either term has no
+    -- significance in the vocabulary.
+    level                  TINYINT,
+    same_condition         BOOLEAN  NOT NULL,  -- the two share a condition (the strict rule)
+    unspecified_condition  BOOLEAN  NOT NULL,  -- either's condition is a placeholder (the wildcard rule)
+    a_submitter_id         INTEGER  NOT NULL,
+    b_submitter_id         INTEGER  NOT NULL,
+    a_term                 VARCHAR,
+    b_term                 VARCHAR,
+    a_review_status        VARCHAR,
+    b_review_status        VARCHAR,
+    a_submission_level     VARCHAR  NOT NULL,
+    b_submission_level     VARCHAR  NOT NULL,
+    a_collection_methods   VARCHAR[],
+    b_collection_methods   VARCHAR[],
+    a_date_last_evaluated  DATE,
+    b_date_last_evaluated  DATE,
+    a_date_submitted       DATE,
+    b_date_submitted       DATE
+    -- No primary key: an index over 15 million rows would cost the load memory; validate.sql
+    -- checks (a_scv_id, b_scv_id) is unique.
+);

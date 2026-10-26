@@ -99,20 +99,27 @@ export async function search(
 
   // A name: prefix match on genes, conditions (and aliases) and submitters, shortest first.
   const prefix = q.toLowerCase();
+  // Genes, then conditions, then submitters: UNION ALL guarantees no order of its own (an engine
+  // may run the branches in parallel), so each branch numbers its rows and the outer query sorts.
   const results = await run(
-    `(SELECT 'gene' AS kind, gene_id AS id, symbol AS label, 'gene symbol' AS match
+    `SELECT kind, id, label, match FROM (
+     (SELECT 1 AS grp, row_number() OVER (ORDER BY lower(symbol) = $1 DESC, length(symbol), symbol) AS pos,
+             'gene' AS kind, gene_id AS id, symbol AS label, 'gene symbol' AS match
       FROM gene WHERE lower(symbol) >= $1 AND lower(symbol) < $1 || '￿'
-      ORDER BY lower(symbol) = $1 DESC, length(symbol), symbol LIMIT $2)
+      ORDER BY pos LIMIT $2)
      UNION ALL
-     (SELECT 'condition', condition_id, name, CASE WHEN lower(name) LIKE $1 || '%' THEN 'condition name' ELSE 'alias ' || alias END
+     (SELECT 2, row_number() OVER (ORDER BY length(name), name), 'condition', condition_id, name,
+             CASE WHEN lower(name) LIKE $1 || '%' THEN 'condition name' ELSE 'alias ' || alias END
       FROM (SELECT condition_id, name, unnest(list_prepend(name, coalesce(aliases, []))) AS alias FROM condition)
       WHERE lower(alias) LIKE $1 || '%'
       QUALIFY row_number() OVER (PARTITION BY condition_id ORDER BY length(alias)) = 1
       ORDER BY length(name), name LIMIT $2)
      UNION ALL
-     (SELECT 'submitter', submitter_id, name, 'submitter name'
+     (SELECT 3, row_number() OVER (ORDER BY lower(name) LIKE $1 || '%' DESC, length(name), name), 'submitter',
+             submitter_id, name, 'submitter name'
       FROM submitter WHERE lower(name) LIKE '%' || $1 || '%'
-      ORDER BY lower(name) LIKE $1 || '%' DESC, length(name), name LIMIT $2)`,
+      ORDER BY lower(name) LIKE $1 || '%' DESC, length(name), name LIMIT $2)
+    ) ORDER BY grp, pos`,
     [prefix, limit],
   );
   return { recognizedAs: 'name', results };

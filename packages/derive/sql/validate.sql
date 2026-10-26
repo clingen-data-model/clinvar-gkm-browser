@@ -32,6 +32,29 @@ SELECT 'duplicate vcv statement_id', statement_id FROM vcv_statement GROUP BY st
 UNION ALL
 SELECT 'duplicate rcv statement_id', statement_id FROM rcv_statement GROUP BY statement_id HAVING count(*) > 1;
 
+-- scv_classification_pair holds every ordered pair exactly once: n*(n-1) per variant and
+-- conflict-detectable type, each pair's reverse present, no pair twice, and the stored level
+-- matching a recomputation.
+INSERT INTO validation_problem
+SELECT 'pair count', 'derived ' || (SELECT count(*) FROM scv_classification_pair) || ', expected ' || expected
+FROM (SELECT sum(n * (n - 1)) AS expected
+      FROM (SELECT count(*) AS n FROM scv s
+            JOIN classification_type ct ON ct.code = s.classification_type AND ct.conflict_detectable
+            GROUP BY s.variation_id, s.classification_type))
+WHERE expected <> (SELECT count(*) FROM scv_classification_pair)
+UNION ALL
+SELECT 'duplicate pair', a_scv_id || ',' || b_scv_id
+FROM scv_classification_pair GROUP BY a_scv_id, b_scv_id HAVING count(*) > 1
+UNION ALL
+SELECT 'pair without its reverse', p.a_scv_id || ',' || p.b_scv_id
+FROM scv_classification_pair p
+ANTI JOIN scv_classification_pair r ON r.a_scv_id = p.b_scv_id AND r.b_scv_id = p.a_scv_id
+UNION ALL
+SELECT 'asymmetric pair level', p.a_scv_id || ',' || p.b_scv_id
+FROM scv_classification_pair p
+JOIN scv_classification_pair r ON r.a_scv_id = p.b_scv_id AND r.b_scv_id = p.a_scv_id
+WHERE p.level IS DISTINCT FROM r.level OR p.same_condition <> r.same_condition;
+
 -- Every non-root statement found its parent (the CHECK only says roots have none).
 INSERT INTO validation_problem
 SELECT 'orphan statement', statement_id FROM vcv_statement WHERE node_kind <> 'root' AND parent_key IS NULL

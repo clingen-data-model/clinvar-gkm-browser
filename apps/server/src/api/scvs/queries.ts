@@ -6,14 +6,11 @@ import { RELATIONSHIP_CODE_SQL, SqlParams, whereSql, type ParsedQuery } from '@c
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
 
-/** The select list of an ScvRow, over `scv s`; needs SCV_ROW_JOINS. */
-export const SCV_ROW_COLUMNS = scvRowColumns('NULL');
-
 /**
- * An ScvRow's select list, with `geneRelationship` from the given SQL: NULL, or
- * geneRelationshipSql for a list filtered by one gene.
+ * An ScvRow's select list over `scv s` (needs SCV_ROW_JOINS), with `geneRelationship` from the
+ * given SQL: NULL, or geneRelationshipSql for a list filtered by one gene.
  */
-function scvRowColumns(geneRelationship: string): string {
+export function scvRowColumns(geneRelationship = 'NULL'): string {
   return `
   s.scv_id AS "scvId",
   'SCV' || lpad(s.scv_id::VARCHAR, 9, '0') AS accession,
@@ -21,13 +18,13 @@ function scvRowColumns(geneRelationship: string): string {
   s.variation_id AS "variationId",
   {'submitterId': s.submitter_id, 'name': sub.name} AS submitter,
   s.classification_type AS "classificationType",
-  s.classification,
-  s.term,
+  s.classification AS classification,
+  s.term AS term,
   ct.label AS "termLabel",
-  ct.bucket,
+  ct.bucket AS bucket,
   s.submission_level AS "submissionLevel",
   s.review_status AS "reviewStatus",
-  rs.stars,
+  rs.stars AS stars,
   s.collection_methods AS "collectionMethods",
   s.date_last_evaluated::VARCHAR AS "dateLastEvaluated",
   s.date_submitted::VARCHAR AS "dateSubmitted",
@@ -68,7 +65,7 @@ export async function variantScvs(
 ): Promise<ScvRow[]> {
   const rows = await db.query(
     release,
-    `SELECT ${SCV_ROW_COLUMNS}
+    `SELECT ${scvRowColumns()}
      FROM scv s ${SCV_ROW_JOINS}
      LEFT JOIN classification_type t ON t.code = s.classification_type
      WHERE s.variation_id = $1
@@ -95,17 +92,17 @@ export async function scvDetail(
   const [rows, submittedConditions, citations] = await Promise.all([
     db.query(
       release,
-      `SELECT ${SCV_ROW_COLUMNS},
+      `SELECT ${scvRowColumns()},
          s.classification_code AS "classificationCode",
          s.submitted_classification AS "submittedClassification",
-         s.direction,
-         s.strength,
+         s.direction AS direction,
+         s.strength AS strength,
          s.assertion_criteria AS "assertionCriteria",
          s.date_created::VARCHAR AS "dateCreated",
          s.local_key AS "localKey",
-         s.predicate,
+         s.predicate AS predicate,
          s.mode_of_inheritance AS "modeOfInheritance",
-         s.penetrance,
+         s.penetrance AS penetrance,
          CASE WHEN s.gene_context_symbol IS NOT NULL OR s.gene_context_id IS NOT NULL THEN
            {'geneId': s.gene_context_id, 'symbol': s.gene_context_symbol, 'source': s.gene_context_source}
          END AS "geneContext",
@@ -176,17 +173,20 @@ export async function listScvs(
     genes.length === 1 && genes[0]?.values.length === 1 ? genes[0].values[0] : undefined;
   const columns =
     oneGene === undefined
-      ? SCV_ROW_COLUMNS
+      ? scvRowColumns()
       : scvRowColumns(geneRelationshipSql(`${params.add(Number(oneGene))}::INTEGER`));
   const page = db.query(
     release,
     `WITH page AS (
-       SELECT s.scv_id, s.variation_id FROM scv s WHERE ${where}
+       SELECT s.scv_id AS scv_id, s.variation_id AS variation_id FROM scv s WHERE ${where}
        ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}
      )
      SELECT ${columns}
-     FROM page p JOIN scv s ON s.variation_id = p.variation_id AND s.scv_id = p.scv_id
+     FROM scv s
      ${SCV_ROW_JOINS}
+     -- The page's rows by a filter on scv's sort key, not a join back to scv: the engine skips
+     -- every block that can't hold them.
+     WHERE (s.variation_id, s.scv_id) IN (SELECT variation_id, scv_id FROM page)
      ORDER BY ${order}`,
     params.values,
   );

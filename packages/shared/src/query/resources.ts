@@ -14,7 +14,7 @@ import {
 } from './conflicts.ts';
 import { bindDimension, DIMENSION_DEFS, type Col, type Dimension } from './dimensions.ts';
 import type { AppliedFilter, FilterOptions } from './filters.ts';
-import type { SqlParams } from './sql.ts';
+import { qualifiedColumns, type SqlParams } from './sql.ts';
 import { filterWhere } from './where.ts';
 
 export type ResourceName = 'scvs' | 'pairs' | 'variants';
@@ -41,8 +41,18 @@ export interface Resource {
 const scvCol: Col = (name) => `s.${name}`;
 
 /** SCV columns the SCV base keeps, for dimensions and measures. */
-const SCV_BASE_COLUMNS = `s.scv_id, s.variation_id, s.submitter_id, s.classification_type, s.term,
-  s.review_status, s.submission_level, s.collection_methods, s.date_last_evaluated, s.date_submitted`;
+const SCV_BASE_COLUMNS = qualifiedColumns('s', [
+  'scv_id',
+  'variation_id',
+  'submitter_id',
+  'classification_type',
+  'term',
+  'review_status',
+  'submission_level',
+  'collection_methods',
+  'date_last_evaluated',
+  'date_submitted',
+]);
 
 const SIDED = new Set<string>(PAIR_SIDE_COLUMNS);
 const sideCol =
@@ -65,13 +75,6 @@ function levelDimension(column: string, labels: Record<string, string>): Dimensi
     key: () => `s.${column}::VARCHAR`,
     labels: null,
     fixedLabels: labels,
-  };
-}
-
-function sideWheres(input: BaseInput, params: SqlParams) {
-  return {
-    a: filterWhere(input.filters, input.filterOptions, params, 'a'),
-    b: filterWhere(input.filters, input.filterOptions, params, 'b'),
   };
 }
 
@@ -109,8 +112,7 @@ export const PAIR_RESOURCE: Resource = {
   },
   defaultMeasure: 'pairs',
   base: (input, params) => {
-    const where = sideWheres(input, params);
-    return `${pairCtes(where.a, where.b, input.pair)},
+    return `${pairCtes(input, params)},
       base AS (SELECT * FROM pairs WHERE ${pairLevelWhere(input.pair, params)})`;
   },
 };
@@ -127,9 +129,9 @@ export const VARIANT_RESOURCE: Resource = {
   },
   defaultMeasure: 'variants',
   base: (input, params) => {
-    const where = sideWheres(input, params);
-    return `members AS (SELECT DISTINCT s.variation_id, s.classification_type FROM scv s WHERE ${where.a}),
-      ${pairCtes(where.a, where.b, input.pair)},
+    const whereA = filterWhere(input.filters, input.filterOptions, params, 'a');
+    return `members AS (SELECT DISTINCT s.variation_id AS variation_id, s.classification_type AS classification_type FROM scv s WHERE ${whereA}),
+      ${pairCtes(input, params)},
       ${STATUS_CTE},
       base AS (SELECT * FROM statuses WHERE ${statusWhere(input.pair, params)})`;
   },

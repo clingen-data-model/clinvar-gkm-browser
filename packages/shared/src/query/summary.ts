@@ -4,7 +4,7 @@
 // those values only. `match` keeps first-dimension values whose label contains the text.
 
 import type { Dimension } from './dimensions.ts';
-import type { FilterContext } from './filters.ts';
+import { scvColumns, type FilterContext } from './filters.ts';
 import type { ParsedQuery } from './parse.ts';
 import { SqlParams, type SqlValue } from './sql.ts';
 
@@ -25,7 +25,7 @@ function base(query: ParsedQuery, params: SqlParams): string {
 }
 
 function context(query: ParsedQuery, params: SqlParams): FilterContext {
-  return { params, options: { geneRelationships: query.geneRelationships }, t: 's' };
+  return { params, options: { geneRelationships: query.geneRelationships }, col: scvColumns('s') };
 }
 
 function measureSql(query: ParsedQuery, measure: string): string {

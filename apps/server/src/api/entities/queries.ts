@@ -35,9 +35,9 @@ async function counts(db: Database, release: string, scvs: string, params: (stri
     ),
     db.query(
       release,
-      `WITH s AS (SELECT s.classification_type, s.term ${scvs})
-       SELECT s.classification_type AS "classificationType", s.term, ct.label AS "termLabel",
-              ct.bucket, count(*)::INTEGER AS scvs
+      `WITH s AS (SELECT s.classification_type AS classification_type, s.term AS term ${scvs})
+       SELECT s.classification_type AS "classificationType", s.term AS term, ct.label AS "termLabel",
+              ct.bucket AS bucket, count(*)::INTEGER AS scvs
        FROM s
        LEFT JOIN classification_term ct ON ct.classification_type = s.classification_type AND ct.term = s.term
        LEFT JOIN classification_type t ON t.code = s.classification_type
@@ -133,8 +133,8 @@ export async function conditionDetail(
 ): Promise<ConditionDetail | null> {
   const rows = await db.query(
     release,
-    `SELECT c.condition_id AS "conditionId", c.name, c.concept_type AS "conceptType",
-            c.medgen_id AS "medgenId", c.aliases,
+    `SELECT c.condition_id AS "conditionId", c.name AS name, c.concept_type AS "conceptType",
+            c.medgen_id AS "medgenId", c.aliases AS aliases,
             coalesce((SELECT list({'system': x.system, 'code': x.code, 'name': x.name} ORDER BY x.system, x.code)
                       FROM condition_xref x WHERE x.condition_id = c.condition_id), []) AS xrefs
      FROM condition c WHERE c.condition_id = $1`,

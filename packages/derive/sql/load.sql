@@ -408,4 +408,36 @@ JOIN stage.prop p ON p.id = e.target_proposition_id
 -- CASE keeps this an equi-join; with AND in ON, DuckDB plans a nested loop (10 minutes here).
 LEFT JOIN condition_set cs ON cs.condition_set_id = CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END;
 
+
+-- Pairs for conflict detection, both orders. The level rule is the queries' (docs/data.md):
+-- 5 when one side is P/LP and the other isn't, 3 for B/LB against VUS, 2 for different terms of
+-- one significance, 1 for one term spelled differently, 0 for the same.
+INSERT INTO scv_classification_pair
+WITH s AS (
+    SELECT s.scv_id, s.variation_id, s.classification_type, s.submitter_id, s.term, s.classification,
+           s.review_status, s.submission_level, s.collection_methods, s.date_last_evaluated,
+           s.date_submitted, s.condition_ids, s.condition_unspecified, t.significance
+    FROM scv s
+    JOIN classification_type ct ON ct.code = s.classification_type AND ct.conflict_detectable
+    LEFT JOIN classification_term t ON t.classification_type = s.classification_type AND t.term = s.term
+)
+SELECT a.scv_id, b.scv_id, a.variation_id, a.classification_type,
+       CASE
+           WHEN a.significance IS NULL OR b.significance IS NULL THEN NULL
+           WHEN (a.significance = 2) <> (b.significance = 2) THEN 5
+           WHEN a.significance <> b.significance THEN 3
+           WHEN a.term <> b.term THEN 2
+           WHEN lower(a.classification) <> lower(b.classification) THEN 1
+           ELSE 0
+       END,
+       list_has_any(a.condition_ids, b.condition_ids),
+       a.condition_unspecified OR b.condition_unspecified,
+       a.submitter_id, b.submitter_id, a.term, b.term, a.review_status, b.review_status,
+       a.submission_level, b.submission_level, a.collection_methods, b.collection_methods,
+       a.date_last_evaluated, b.date_last_evaluated, a.date_submitted, b.date_submitted
+FROM s a
+JOIN s b ON b.variation_id = a.variation_id AND b.classification_type = a.classification_type
+WHERE a.scv_id <> b.scv_id
+ORDER BY a.submitter_id, a.variation_id, a.scv_id, b.scv_id;
+
 CHECKPOINT;
