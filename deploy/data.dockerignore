@@ -1,0 +1,3 @@
+# The data image's build context: the derived releases only.
+**
+!data/derived/**

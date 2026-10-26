@@ -9,20 +9,20 @@ The upstream download is 12 GB and deriving it takes minutes and several GB of m
 - **Never derive where we serve.** Data is built ahead of time (by hand for now, by a scheduled build later) and served read-only.
 - **The data is read-only and fixed per release,** so every instance has its own copy and they scale out without a shared database.
 
-## First pass: a fat image, deployed by hand
+## First pass: images built and deployed by hand
 
-One image holds the server, the built web app and one derived release (`deploy/Dockerfile`). Startup takes seconds.
+Two images, so a code change never re-sends the data:
 
-1. **Build** for linux/amd64 (Cloud Run's platform) on the Mac. The web app builds natively; only the dependency install runs under emulation.
+- **The data image** (`deploy/data.Dockerfile`): Node plus one derived release, about 2.2 GB. Built and pushed once per release.
+- **The app image** (`deploy/Dockerfile`): built on the data image, adding the server's dependencies (about 100 MB) and the code and web app (under 1 MB). The registry already has the data image's layers, so pushing an app image uploads only these.
 
-   ```sh
-   podman build --platform linux/amd64 --pull=always -f deploy/Dockerfile \
-     --build-arg RELEASE=2026-10-18 -t clinvar-gkm-browser:2026-10-18 .
-   ```
+Startup takes seconds: nothing to download, nothing to derive.
 
-2. **Check locally:** `podman run --rm -p 127.0.0.1:8080:8080 clinvar-gkm-browser:2026-10-18`, then open http://localhost:8080.
-3. **Push** to Artifact Registry in `clingen-dev` (repository, region and name to be decided).
-4. **Create the Cloud Run service** from the pushed image, with the settings below.
+1. **Build** for linux/amd64 (Cloud Run's platform) on the Mac. `scripts/build-image.sh [--push] [release]` builds the data image if it isn't there yet, then the app image, tagged `<release>-<commit>`. With `--push` it logs in and pushes both, and refuses to push uncommitted changes. The web app builds natively; only the server's dependency install runs under emulation.
+
+2. **Check locally:** `podman run --rm -p 127.0.0.1:8080:8080 <app image>`, then open http://localhost:8080.
+3. **Push** with `scripts/build-image.sh --push` (from a clean, committed tree).
+4. **Deploy** the pushed app image to the Cloud Run service (below).
 
 ### The dev service (clingen-dev, us-east1)
 
@@ -32,7 +32,7 @@ Images: `us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-bro
 # Deploy (or update) the service, behind IAP: Google sign-in, no code in the app.
 gcloud run deploy clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
   --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-c5ca4ee \
-  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=1 --cpu-boost \
+  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=3 --cpu-boost \
   --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-522856288592.us-east1.run.app \
   --no-allow-unauthenticated --iap
 
@@ -57,7 +57,7 @@ The URL is https://clinvar-gkm-browser-522856288592.us-east1.run.app. IAP's Goog
 | `DUCKDB_THREADS` | the vCPU count | Don't rely on detecting it |
 | `CLINVAR_ALLOWED_HOSTS` | the service's run.app host names (and a custom domain, if any) | The Host check refuses any other name |
 | Minimum instances | 0 for dev | Costs nothing idle; a cold start takes a few seconds |
-| Maximum instances | 1 for dev | Bounds cost, and keeps one warm instance: a new instance reads its data cold (image streaming), and one Conflicts tab can push CPU high enough to trigger scaling |
+| Maximum instances | 3 for dev | Bounds cost. Request-based billing charges only while requests run, so more instances cost little more; but each new instance reads its data cold (image streaming), and one Conflicts tab can push CPU high enough to start another |
 | Concurrency | low (around 10) | A DuckDB query uses every core |
 | Access | IAP, limited to the team's Google accounts | The app has no login and isn't hardened for anonymous traffic |
 

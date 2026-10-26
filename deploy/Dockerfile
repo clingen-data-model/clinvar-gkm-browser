@@ -1,20 +1,19 @@
-# The whole app in one image: the server, the built web app, and one derived release baked in
-# (docs/deploy.md). Data needs no download or derivation at startup.
+# The app image: the server and the built web app, on top of a data image that holds Node and one
+# derived release (deploy/data.Dockerfile). Pushing a new app image uploads only these layers;
+# the data image's are already in the registry. Use scripts/build-image.sh, or:
 #
-#   podman build --platform linux/amd64 --pull=always -f deploy/Dockerfile \
-#     --build-arg RELEASE=2026-10-18 -t clinvar-gkm-browser:2026-10-18 .
-#
-# --pull=always matters when building for another platform: the stages share the node image's
-# tag, and without it podman reuses the build machine's copy (arm64 on a Mac) for the target's
-# stages too, producing an image labelled amd64 with arm64 binaries inside. The architecture
-# check below catches that.
+#   podman build --platform linux/amd64 -f deploy/Dockerfile \
+#     --build-arg DATA_IMAGE=<registry>/clinvar-gkm-data:2026-10-18 -t <registry>/clinvar-gkm-browser:<tag> .
 
-ARG NODE_VERSION=26.10.0
+# The data image to build on; its release is the one served.
+ARG DATA_IMAGE
 ARG PNPM_VERSION=12.13.0
+ARG NODE_VERSION=26.10.0
 
 # The web app, built on the build machine's own platform: its output is platform-independent,
-# so this avoids emulating the target.
-FROM --platform=$BUILDPLATFORM docker.io/library/node:${NODE_VERSION}-slim AS web
+# so this avoids emulating the target. The full node image, not -slim: this tag is only ever used
+# for the build platform, so it can't be confused with the target's -slim in the data image.
+FROM --platform=$BUILDPLATFORM docker.io/library/node:${NODE_VERSION} AS web
 ARG PNPM_VERSION
 RUN npm install --global pnpm@${PNPM_VERSION}
 WORKDIR /app
@@ -27,8 +26,13 @@ COPY apps/web apps/web
 RUN pnpm --filter @cvb/web build
 
 # The server's production dependencies, for the target platform (DuckDB's binding is native).
-FROM --platform=$TARGETPLATFORM docker.io/library/node:${NODE_VERSION}-slim AS deps
+# Built on the data image: it has the target's Node, and the platform can't be mistaken (podman
+# can otherwise reuse the build machine's copy of a shared node tag for the target's stages).
+# --platform is explicit because podman 5.3, after a stage on the build platform, otherwise looks
+# the data image up with the build machine's variant (arm64's v8) and doesn't find it.
+FROM --platform=$TARGETPLATFORM ${DATA_IMAGE} AS deps
 ARG PNPM_VERSION
+USER root
 RUN npm install --global pnpm@${PNPM_VERSION}
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -36,10 +40,8 @@ COPY apps/server/package.json apps/server/
 COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile --prod --filter @cvb/server...
 
-FROM --platform=$TARGETPLATFORM docker.io/library/node:${NODE_VERSION}-slim
-ARG RELEASE
+FROM --platform=$TARGETPLATFORM ${DATA_IMAGE}
 ARG TARGETARCH
-RUN test -n "${RELEASE}" || { echo 'Give --build-arg RELEASE=YYYY-MM-DD' >&2; exit 1; }
 # Node's name for the target's CPU must match node's own, or the image holds the wrong binaries.
 RUN expected=$([ "$TARGETARCH" = amd64 ] && echo x64 || echo "$TARGETARCH"); \
     actual=$(node -p process.arch); \
@@ -53,9 +55,6 @@ ENV NODE_ENV=production \
     CLINVAR_DATA_DIR=/data \
     WEB_DIST_DIR=/app/apps/web/dist \
     LOG_FILE=off
-# The data first: the biggest layer, which changes weekly, so code changes don't resend it.
-# /data stays writable for DuckDB's spill directory (/data/tmp).
-COPY --chown=node:node data/derived/1/${RELEASE}/ /data/derived/1/${RELEASE}/
 WORKDIR /app
 COPY --from=deps /app ./
 COPY packages/shared packages/shared

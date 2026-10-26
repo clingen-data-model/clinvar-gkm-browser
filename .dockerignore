@@ -1,5 +1,5 @@
-# The image's build context: only what deploy/Dockerfile copies. Everything else (data/source's
-# 12 GB, node_modules, builds) stays out.
+# The app image's build context: only what deploy/Dockerfile copies. The data comes from the data
+# image (deploy/data.Dockerfile, with its own ignore file), so data/ stays out entirely.
 **
 !package.json
 !pnpm-lock.yaml
@@ -12,4 +12,3 @@ apps/web/node_modules
 apps/web/dist
 !packages/shared/**
 packages/shared/node_modules
-!data/derived/**
