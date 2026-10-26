@@ -4,7 +4,9 @@
 # the app's small layers.
 #
 # Usage: scripts/build-image.sh [--push] [release]   (default: the newest derived release)
-# Tags: <registry>/clinvar-gkm-data:<release> and <registry>/clinvar-gkm-browser:<release>-<commit>.
+# Tags: <registry>/clinvar-gkm-data:<release>-<derived> and <registry>/clinvar-gkm-browser:<release>-<commit>,
+# where <derived> is when the release was derived (its manifest's loaded_at), so deriving a release
+# again (say, with a new table) makes a new data image rather than reusing the old one.
 set -euo pipefail
 
 REGISTRY="${CLINVAR_IMAGE_REGISTRY:-us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser}"
@@ -27,7 +29,8 @@ if [[ -n "$(git status --porcelain)" ]]; then
   $push && { echo "uncommitted changes: commit before pushing" >&2; exit 1; }
   commit="$commit-dirty"
 fi
-data_image="$REGISTRY/clinvar-gkm-data:$release"
+derived=$(jq -r '.loaded_at' "$base/$release/manifest.json" | tr -d ' :-' | cut -c1-14 | sed 's/\(........\)\(......\)/\1T\2/')
+data_image="$REGISTRY/clinvar-gkm-data:$release-$derived"
 app_image="$REGISTRY/clinvar-gkm-browser:$release-$commit"
 
 if podman image exists "$data_image"; then
