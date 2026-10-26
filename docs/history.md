@@ -95,16 +95,34 @@ The comparison is on derived tables, not on the delta's lists, because a derived
 
 About 17 derivations of 3 minutes each, once. Applying a delta to the derived tables directly would mean tracing every dependency; re-deriving the whole release can't miss one.
 
-**The converter** turns bundle JSON into upstream's Parquet shape: typed columns, bare IDs instead of `#/section/id` pointers, no `data` column. It's checked by an oracle:
-- the 2026-10-18 delta's records, converted, must equal the same IDs' rows in the published 2026-10-18 Parquet;
-- later, the whole 2026-10-18 weekly bundle, converted and derived, must equal the release derived from the published Parquet.
+**The converter** (`packages/derive/sql/from-state.sql`, run by `scripts/convert-state.sh`) turns a release's **state** into upstream's parquet shape, so `load.sql` runs on it unchanged. A state is one file per bundle section, rows `(key, rec)`, with `rec` the record's JSON as in the bundle. The converter follows upstream's own export (clinvar-gkm `src/scripts/parquet-schemas/`):
+- `#/<section>/` pointers become bare ids;
+- extension values are split into `value_<type>` fields by extension name;
+- absent lists are `[]` and absent objects NULL, as in BigQuery's output;
+- the bundle's one `evidenceLine` section becomes the VCV, RCV and SCV evidence-line tables.
+
+It writes only the columns `load.sql` reads.
+
+**Checked 26 October 2026 against all of 2026-10-18,** without the 4.6 GB bundle. The published parquet's `data` column holds the bundle's records: 1,269 records sampled from the 2026-10-18 delta were identical to their `data`. So a state built from `data` (`scripts/state-from-parquet.sh`) is the bundle's state. `scripts/check-converter.sh` then compares:
+- **columns:** all 22 converted tables equal the published typed columns, every row. About 11 minutes, mostly `variation`;
+- **derived:** the converted release, derived, equals `data/derived/1/2026-10-18` in all 30 tables compared (all but `release` and `source_file`, which describe the input files). About a minute.
+
+Costs on the development Mac:
+
+| Step | Time | Peak memory | Output |
+| --- | --- | --- | --- |
+| State from parquet | 32 s | | 3.8 GB |
+| Convert | 3.6 min | 4.6 GB resident | 3.1 GB |
+| Derive | 2.7 min | as before | 2.0 GB |
+
+Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out of DuckDB's 4 GB limit at first. Both steps now use 3 threads, 20,000-row groups and a spill directory.
 
 ## Steps
 
 1. This doc. Done.
-2. **The converter,** checked against the 2026-10-18 delta's records.
+2. **The converter,** checked against all of 2026-10-18. Done.
 3. **History tables and the compare step,** tested on the fixture with a hand-made second release.
-4. **Backfill** from 2026-06-27, after the full-bundle oracle passes. Ask before downloading the 4.6 GB bundle and running the backfill.
+4. **Backfill** from 2026-06-27: a streaming reader for bundles and deltas, then each week in turn. Ask before downloading the 4.6 GB bundle and running it.
 5. **API:** a variant's versions and removals; any read with `as_of`.
 6. **Web:** a history selector on the variant page that renders a past version with its SCVs as they stood.
 
