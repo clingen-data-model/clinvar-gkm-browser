@@ -13,7 +13,7 @@ The upstream download is 12 GB and deriving it takes minutes and several GB of m
 
 Two images, so a code change never re-sends the data:
 
-- **The data image** (`deploy/data.Dockerfile`): Node plus one derived release, about 2.2 GB. Built and pushed once per release.
+- **The data image** (`deploy/data.Dockerfile`): Node plus one derived release, about 2.4 GB, tagged `<release>-<derived>` (when the release was derived). Built and pushed once per derivation, so re-deriving a release (a new table, say) makes a new one.
 - **The app image** (`deploy/Dockerfile`): built on the data image, adding the server's dependencies (about 100 MB) and the code and web app (under 1 MB). The registry already has the data image's layers, so pushing an app image uploads only these.
 
 Startup takes seconds: nothing to download, nothing to derive.
@@ -31,7 +31,7 @@ Images: `us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-bro
 ```sh
 # Deploy (or update) the service, behind IAP: Google sign-in, no code in the app.
 gcloud run deploy clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
-  --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-c5ca4ee \
+  --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-be1c056 \
   --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=3 --cpu-boost \
   --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-522856288592.us-east1.run.app \
   --no-allow-unauthenticated --iap
