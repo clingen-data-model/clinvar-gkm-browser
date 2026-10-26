@@ -32,7 +32,7 @@ Images: `us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-bro
 # Deploy (or update) the service, behind IAP: Google sign-in, no code in the app.
 gcloud run deploy clinvar-gkm-browser --project=clingen-dev --region=us-east1 \
   --image=us-east1-docker.pkg.dev/clingen-dev/clinvar-gkm-browser/clinvar-gkm-browser:2026-10-18-c5ca4ee \
-  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=3 --cpu-boost \
+  --cpu=4 --memory=8Gi --concurrency=10 --min-instances=0 --max-instances=1 --cpu-boost \
   --set-env-vars=DUCKDB_THREADS=4,DUCKDB_MEMORY_LIMIT=4GB,CLINVAR_ALLOWED_HOSTS=clinvar-gkm-browser-522856288592.us-east1.run.app \
   --no-allow-unauthenticated --iap
 
@@ -57,7 +57,7 @@ The URL is https://clinvar-gkm-browser-522856288592.us-east1.run.app. IAP's Goog
 | `DUCKDB_THREADS` | the vCPU count | Don't rely on detecting it |
 | `CLINVAR_ALLOWED_HOSTS` | the service's run.app host names (and a custom domain, if any) | The Host check refuses any other name |
 | Minimum instances | 0 for dev | Costs nothing idle; a cold start takes a few seconds |
-| Maximum instances | small (2–3) | Bounds cost |
+| Maximum instances | 1 for dev | Bounds cost, and keeps one warm instance: a new instance reads its data cold (image streaming), and one Conflicts tab can push CPU high enough to trigger scaling |
 | Concurrency | low (around 10) | A DuckDB query uses every core |
 | Access | IAP, limited to the team's Google accounts | The app has no login and isn't hardened for anonymous traffic |
 
