@@ -67,6 +67,19 @@ test("a gene's variants can include those spanning or near it", async ({ page })
   await expect(variants).toHaveText('352');
 });
 
+test("a gene's submitters are counted by significance, and can be searched", async ({ page }) => {
+  await page.goto('/genes/3077');
+  const table = page.getByRole('region', { name: /^Submitters/ });
+  await expect(table.getByRole('columnheader', { name: 'P/LP' })).toBeVisible();
+  // Most submissions first.
+  await expect(table.getByRole('row').nth(1)).toContainText('Labcorp Genetics');
+  await table.getByRole('searchbox').fill('genedx');
+  await table.getByRole('searchbox').press('Enter');
+  await expect(page).toHaveURL(/submitters_q=genedx/);
+  await expect(table.getByRole('row')).toHaveCount(2);
+  await expect(table.getByRole('link', { name: 'GeneDx', exact: true })).toBeVisible();
+});
+
 test("a gene's conflicts tab grades its variants and lists the pairs in a grid cell", async ({
   page,
 }) => {
