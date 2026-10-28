@@ -54,6 +54,137 @@ Tables with no upstream counterpart:
 | `classification_type`, `classification_term`, `submission_level`, `review_status` | Vocabularies seeded from ClinGen's bq-tools, with labels, ordering, significance groups and stars |
 | `reference_issue` | Every value that breaks a declared relationship ([Faithful to upstream](schema.md#faithful-to-upstream)) |
 
+## Diagrams
+
+How each entity points to the others, in three areas, upstream first and then derived. Each line is a reference, drawn from the table it points to (one end) to the table that holds the pointer (many end). Its label is the pointer, when the name doesn't already say it. GitHub and VS Code's Markdown preview draw them.
+
+- **Upstream** declares no references. They're the ID columns and arrays its schema documents ([source-schema.md](source-schema.md#foreign-keys)), drawn by hand. An array of IDs (`members[]`, `concepts[]`, `evidence_items[]`) is drawn many-to-many. `proposition` stands for the four proposition tables, and `object_id` points to one of four tables, chosen by `object_type`.
+- **Derived** diagrams are generated from the `REFERENCES` clauses in `schema.sql` by `scripts/schema-diagrams.sh`, so they show what the load checks. A dashed line is a reference declared `NOT ENFORCED`. References to the vocabularies (classification type, submission level, review status) are left out.
+
+### Variants
+
+Upstream:
+
+```mermaid
+erDiagram
+  sequenceReference ||--o{ location : "sequence_reference_id"
+  location ||--o{ allele : "location_id"
+  location ||--o{ copyNumberCount : "location_id"
+  location ||--o{ copyNumberChange : "location_id"
+  allele }o--o{ variation : "members[], constraints[]"
+  copyNumberCount }o--o{ variation : "members[], constraints[]"
+  copyNumberChange }o--o{ variation : "members[], constraints[]"
+  gene }o--o{ variation : "extensions: clinvarGeneList"
+```
+
+Derived: the two copy-number tables become one, a variant points to its one VRS member, and the gene, HGVS and cross-reference lists become child tables.
+
+<!-- schema-diagram area=variant -->
+```mermaid
+erDiagram
+  sequence_reference ||--o{ location : ""
+  location ||--o{ allele : ""
+  location ||--o{ copy_number : ""
+  allele |o--o{ variant : ""
+  copy_number |o--o{ variant : ""
+  location |o--o{ variant : "defining_location_id"
+  variant ||--o{ variant_gene : ""
+  gene ||--o{ variant_gene : ""
+  variant ||--o{ variant_hgvs : ""
+  variant ||--o{ variant_xref : ""
+```
+<!-- /schema-diagram -->
+
+### Conditions and therapies
+
+Upstream:
+
+```mermaid
+erDiagram
+  condition }o--o{ conditionSet : "concepts[]"
+  conditionSet }o--o{ conditionSet : "concepts[], one level"
+  therapy }o--o{ therapyGroup : "members[]"
+```
+
+Derived: arrays become member tables, and a condition's mappings become `condition_xref`.
+
+<!-- schema-diagram area=condition -->
+```mermaid
+erDiagram
+  condition ||--o{ condition_xref : ""
+  condition_set ||--o{ condition_set_member : ""
+  condition |o--o{ condition_set_member : ""
+  condition_set |o--o{ condition_set_member : "member_set_key"
+  therapy_group ||--o{ therapy_group_member : ""
+  therapy ||--o{ therapy_group_member : ""
+```
+<!-- /schema-diagram -->
+
+### Submissions and aggregates
+
+Upstream: every statement points to a proposition, and the proposition points to the variant and the condition. VCV and RCV trees are evidence-line rows whose `evidence_items[]` list the statements they cite.
+
+```mermaid
+erDiagram
+  proposition ||--o| scv : "proposition_id"
+  proposition ||--o| vcv : "proposition_id"
+  proposition ||--o| rcv : "proposition_id"
+  variation ||--o{ proposition : "subject_variant_id"
+  condition |o--o{ proposition : "object_id"
+  conditionSet |o--o{ proposition : "object_id"
+  therapy |o--o{ proposition : "object_id"
+  therapyGroup |o--o{ proposition : "object_id"
+  condition |o--o{ proposition : "condition_qualifier_id"
+  gene |o--o{ proposition : "gene_context_id, SCV only"
+  submitter }o--o{ scv : "contributions[].contributor"
+  evidenceLine }o--o{ scv : "has_evidence_lines[], somatic"
+  proposition ||--o{ evidenceLine : "target_proposition_id"
+  vcv_evidenceLine }o--o{ vcv : "has_evidence_lines[]"
+  vcv }o--o{ vcv_evidenceLine : "evidence_items[]"
+  scv }o--o{ vcv_evidenceLine : "evidence_items[]"
+  rcv_evidenceLine }o--o{ rcv : "has_evidence_lines[]"
+  rcv }o--o{ rcv_evidenceLine : "evidence_items[]"
+  scv }o--o{ rcv_evidenceLine : "evidence_items[]"
+```
+
+Derived: propositions fold into their statements, so an SCV points straight to its variant, submitter, condition or condition set, and the VCV and RCV statements that cite it. A tree's parent is a column (`parent_key`). `scv_condition` expands condition sets, and `scv_classification_pair` pairs SCVs on the same variant.
+
+<!-- schema-diagram area=submission -->
+```mermaid
+erDiagram
+  variant ||--o{ vcv_statement : ""
+  vcv_statement |o--o{ vcv_statement : "parent_key"
+  condition |o--o{ vcv_statement : ""
+  condition_set |o--o{ vcv_statement : ""
+  variant ||--o{ rcv_statement : ""
+  rcv_statement |o--o{ rcv_statement : "parent_key"
+  condition |o--o{ rcv_statement : ""
+  condition_set |o--o{ rcv_statement : ""
+  variant ||--o{ scv : ""
+  submitter ||--o{ scv : ""
+  condition |o--o{ scv : ""
+  condition_set |o--o{ scv : ""
+  gene |o..o{ scv : "gene_context_id, not enforced"
+  vcv_statement ||--o{ scv : ""
+  rcv_statement ||--o{ scv : ""
+  scv ||--o{ scv_citation : ""
+  scv ||--o{ scv_submitted_condition : ""
+  condition |o--o{ scv_submitted_condition : ""
+  scv ||--o{ scv_condition : ""
+  condition ||--o{ scv_condition : ""
+  condition_set |o--o{ scv_condition : "via_condition_set_key"
+  scv ||--o| scv_somatic_impact : ""
+  condition |o--o{ scv_somatic_impact : ""
+  condition_set |o--o{ scv_somatic_impact : ""
+  therapy |o--o{ scv_somatic_impact : ""
+  therapy_group |o--o{ scv_somatic_impact : ""
+  condition |o--o{ scv_somatic_impact : "condition_qualifier_id"
+  scv ||--o{ scv_classification_pair : "a_scv_id"
+  scv ||--o{ scv_classification_pair : "b_scv_id"
+  variant ||--o{ scv_classification_pair : ""
+```
+<!-- /schema-diagram -->
+
 ## One SCV in both shapes
 
 SCV001800608, version 1: a benign classification from submitter 506395 on variant 133445.

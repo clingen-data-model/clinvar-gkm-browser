@@ -36,7 +36,7 @@ ESLint enforces the boundaries: only `queries.ts` files and `src/data/` touch th
 **Data model**
 - **Faithful to upstream.** The derivation never invents, drops or repairs rows to satisfy a constraint. A relationship the data breaks is declared `NOT ENFORCED` in a comment and reported in `reference_issue` ([docs/schema.md](docs/schema.md#faithful-to-upstream)).
 - **Add a derived table when a common query keeps redoing request-independent work.** Do the work once per release in `load.sql` and have requests filter the result; `scv_classification_pair` is the model ([docs/data.md](docs/data.md#derived-model)). We measured other engines (a DuckDB file, SQLite, ClickHouse); the `clickhouse` branch is kept as a record and isn't merged.
-- **A schema change touches several places:** `schema.sql`, `load.sql`, `validate.sql`, `scripts/make-fixture.sh` (then regenerate the fixture), and `docs/schema.md`.
+- **A schema change touches several places:** `schema.sql`, `load.sql`, `validate.sql`, `scripts/make-fixture.sh` (then regenerate the fixture), `docs/schema.md`, and the diagrams (`scripts/schema-diagrams.sh`).
 - **Vocabularies follow ClinGen's clinvar-ingest-bq-tools,** seeded in `schema.sql`. Conflict levels follow ClinVar Miner's 0–5 scale ([docs/data.md](docs/data.md#conflicts)).
 
 **Web**

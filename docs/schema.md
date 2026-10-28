@@ -61,43 +61,79 @@ Decided 25 October 2026: **the derived database represents ClinVar and ClinVar-G
 
 ## Tables
 
+Generated from the `REFERENCES` clauses in `packages/derive/sql/schema.sql` by `scripts/schema-diagrams.sh`; a dashed line is a reference declared `NOT ENFORCED`. [upstream-vs-derived.md](upstream-vs-derived.md#diagrams) sets each beside upstream's.
+
+**Variants:**
+
+<!-- schema-diagram area=variant -->
 ```mermaid
 erDiagram
   sequence_reference ||--o{ location : ""
   location ||--o{ allele : ""
   location ||--o{ copy_number : ""
-  allele |o--o{ variant : "allele_id"
-  copy_number |o--o{ variant : "copy_number_id"
+  allele |o--o{ variant : ""
+  copy_number |o--o{ variant : ""
   location |o--o{ variant : "defining_location_id"
   variant ||--o{ variant_gene : ""
   gene ||--o{ variant_gene : ""
   variant ||--o{ variant_hgvs : ""
   variant ||--o{ variant_xref : ""
+```
+<!-- /schema-diagram -->
+
+**Conditions and therapies:**
+
+<!-- schema-diagram area=condition -->
+```mermaid
+erDiagram
   condition ||--o{ condition_xref : ""
   condition_set ||--o{ condition_set_member : ""
   condition |o--o{ condition_set_member : ""
+  condition_set |o--o{ condition_set_member : "member_set_key"
   therapy_group ||--o{ therapy_group_member : ""
   therapy ||--o{ therapy_group_member : ""
+```
+<!-- /schema-diagram -->
+
+**Submissions and aggregates:**
+
+<!-- schema-diagram area=submission -->
+```mermaid
+erDiagram
   variant ||--o{ vcv_statement : ""
   vcv_statement |o--o{ vcv_statement : "parent_key"
+  condition |o--o{ vcv_statement : ""
+  condition_set |o--o{ vcv_statement : ""
   variant ||--o{ rcv_statement : ""
   rcv_statement |o--o{ rcv_statement : "parent_key"
+  condition |o--o{ rcv_statement : ""
+  condition_set |o--o{ rcv_statement : ""
   variant ||--o{ scv : ""
   submitter ||--o{ scv : ""
-  gene |o--o{ scv : "gene_context_id"
   condition |o--o{ scv : ""
   condition_set |o--o{ scv : ""
-  vcv_statement ||--o{ scv : "vcv_statement_key"
-  rcv_statement ||--o{ scv : "rcv_statement_key"
+  gene |o..o{ scv : "gene_context_id, not enforced"
+  vcv_statement ||--o{ scv : ""
+  rcv_statement ||--o{ scv : ""
   scv ||--o{ scv_citation : ""
   scv ||--o{ scv_submitted_condition : ""
+  condition |o--o{ scv_submitted_condition : ""
   scv ||--o{ scv_condition : ""
   condition ||--o{ scv_condition : ""
+  condition_set |o--o{ scv_condition : "via_condition_set_key"
   scv ||--o| scv_somatic_impact : ""
-  scv ||--o{ scv_classification_pair : ""
+  condition |o--o{ scv_somatic_impact : ""
+  condition_set |o--o{ scv_somatic_impact : ""
+  therapy |o--o{ scv_somatic_impact : ""
+  therapy_group |o--o{ scv_somatic_impact : ""
+  condition |o--o{ scv_somatic_impact : "condition_qualifier_id"
+  scv ||--o{ scv_classification_pair : "a_scv_id"
+  scv ||--o{ scv_classification_pair : "b_scv_id"
+  variant ||--o{ scv_classification_pair : ""
 ```
+<!-- /schema-diagram -->
 
-The vocabulary tables (`classification_type`, `submission_level`, `review_status`) and the release metadata (`release`, `source_file`) are left out of the diagram.
+The vocabulary tables (`classification_type`, `classification_term`, `submission_level`, `review_status`), the release metadata (`release`, `source_file`) and `reference_issue` are left out of the diagrams.
 
 | Table | Key | One row per | From (upstream) |
 | --- | --- | --- | --- |
