@@ -17,7 +17,8 @@ export function contentSecurityPolicy(indexHtml: string): string {
     "default-src 'self'",
     ['script-src', "'self'", ...inlineScriptHashes(indexHtml)].join(' '),
     "style-src 'self'",
-    "img-src 'self'",
+    // blob: images are drawn in the page: the schema diagrams (components/schema/MermaidDiagram.tsx).
+    "img-src 'self' blob:",
     "font-src 'self'",
     "connect-src 'self'",
     "object-src 'none'",

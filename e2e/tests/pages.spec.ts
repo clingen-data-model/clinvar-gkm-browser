@@ -47,7 +47,14 @@ test('an unknown variant shows not found with a 404', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Not found');
 });
 
-for (const path of ['/', '/variants/10', '/genes/3077', '/genes/3077/conflicts', '/search?q=hfe']) {
+for (const path of [
+  '/',
+  '/variants/10',
+  '/genes/3077',
+  '/genes/3077/conflicts',
+  '/search?q=hfe',
+  '/schema',
+]) {
   test(`${path} has no accessibility violations`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -55,6 +62,18 @@ for (const path of ['/', '/variants/10', '/genes/3077', '/genes/3077/conflicts',
     expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
   });
 }
+
+test('the schema page draws each diagram from the doc', async ({ page }) => {
+  await page.goto('/schema');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Schema diagrams');
+  const diagrams = page.getByRole('img', { name: /^Entity-relationship diagram/ });
+  await expect(diagrams).toHaveCount(6);
+  // Drawn, not just placed: a broken image would show only its alt text, one line high.
+  for (const img of await diagrams.all()) {
+    await expect(img).toHaveAttribute('src', /^blob:/);
+    await expect.poll(async () => (await img.boundingBox())?.height ?? 0).toBeGreaterThan(100);
+  }
+});
 
 test("a gene's variants can include those spanning or near it", async ({ page }) => {
   await page.goto('/genes/3077');

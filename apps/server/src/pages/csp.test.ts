@@ -22,6 +22,7 @@ describe('contentSecurityPolicy', () => {
     expect(policy).toContain(`script-src 'self' ${sha256('a()')}`);
     expect(policy).toContain("default-src 'self'");
     expect(policy).toContain("frame-ancestors 'none'");
+    expect(policy).toContain("img-src 'self' blob:;");
     expect(policy).not.toContain('unsafe-inline');
   });
 });

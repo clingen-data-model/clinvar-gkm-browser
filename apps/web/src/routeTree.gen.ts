@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as SchemaRouteImport } from './routes/schema'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as ConditionsIdRouteImport } from './routes/conditions.$id'
 import { Route as GenesIdRouteImport } from './routes/genes.$id'
@@ -27,6 +28,11 @@ import { Route as SubmittersIdVsOtherIdRouteImport } from './routes/submitters.$
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SchemaRoute = SchemaRouteImport.update({
+  id: '/schema',
+  path: '/schema',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SearchRoute = SearchRouteImport.update({
@@ -97,6 +103,7 @@ const SubmittersIdVsOtherIdRoute = SubmittersIdVsOtherIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/schema': typeof SchemaRoute
   '/search': typeof SearchRoute
   '/conditions/$id': typeof ConditionsIdRouteWithChildren
   '/genes/$id': typeof GenesIdRouteWithChildren
@@ -113,6 +120,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/schema': typeof SchemaRoute
   '/search': typeof SearchRoute
   '/scvs/$id': typeof ScvsIdRoute
   '/variants/$id': typeof VariantsIdRoute
@@ -127,6 +135,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/schema': typeof SchemaRoute
   '/search': typeof SearchRoute
   '/conditions/$id': typeof ConditionsIdRouteWithChildren
   '/genes/$id': typeof GenesIdRouteWithChildren
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/schema'
     | '/search'
     | '/conditions/$id'
     | '/genes/$id'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/schema'
     | '/search'
     | '/scvs/$id'
     | '/variants/$id'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/schema'
     | '/search'
     | '/conditions/$id'
     | '/genes/$id'
@@ -191,6 +203,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  SchemaRoute: typeof SchemaRoute
   SearchRoute: typeof SearchRoute
   ConditionsIdRoute: typeof ConditionsIdRouteWithChildren
   GenesIdRoute: typeof GenesIdRouteWithChildren
@@ -206,6 +219,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/schema': {
+      id: '/schema'
+      path: '/schema'
+      fullPath: '/schema'
+      preLoaderRoute: typeof SchemaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/search': {
@@ -347,6 +367,7 @@ const SubmittersIdRouteWithChildren = SubmittersIdRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  SchemaRoute: SchemaRoute,
   SearchRoute: SearchRoute,
   ConditionsIdRoute: ConditionsIdRouteWithChildren,
   GenesIdRoute: GenesIdRouteWithChildren,

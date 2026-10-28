@@ -19,6 +19,7 @@ const PAGES = [
   '/submitters/:id/vs/:otherId',
   '/conditions/:id',
   '/conditions/:id/conflicts',
+  '/schema',
 ];
 
 /** Paths that are never pages, so a miss under them is a plain 404, not the app. */
