@@ -283,9 +283,9 @@ SQL
     echo "$DUCKDB_SETTINGS SET temp_directory = '$work/spill';"
     echo "CREATE TEMP MACRO id_int(id) AS CAST(split_part(id, ':', 2) AS INTEGER);"
     echo "CREATE TEMP MACRO line_statement(id) AS regexp_extract(id, '^(.*)\.(contributing|non-contributing)\$', 1);"
-    # The affected variants' propositions and statements. A record can change what it points to under
-    # the same key (a proposition's subject moves when ClinVar merges a variant into another), so
-    # these take every key that matched at any release, then filter its row as of this one.
+    # The affected variants' records, each selected the same way: every key whose rows ever matched,
+    # then the condition on its row as of this release. A record can change what it points to under
+    # the same key (a proposition's subject moves when ClinVar merges a variant into another).
     for t in $PROP_TABLES; do
       echo "CREATE TEMP TABLE p_$t AS $(as_of_where "$t" "$release" "id_int(subject_variant_id) IN (SELECT variation_id FROM affected)" "$work");"
     done
@@ -295,10 +295,9 @@ SQL
     done
     for t in $PROP_TABLES; do echo "COPY p_$t TO '$work/sub/$t.parquet' (FORMAT parquet);"; done
     for t in scv vcv rcv; do echo "COPY s_$t TO '$work/sub/$t.parquet' (FORMAT parquet);"; done
-    # Filters on the key itself are safe before as_of.
-    echo "COPY ($(as_of variation "$release" "id_int(id) IN (SELECT variation_id FROM affected)" "$work")) TO '$work/sub/variation.parquet' (FORMAT parquet);"
-    echo "COPY ($(as_of vcv_evidenceLine "$release" "line_statement(id) IN (SELECT id FROM s_vcv)" "$work")) TO '$work/sub/vcv_evidenceLine.parquet' (FORMAT parquet);"
-    echo "COPY ($(as_of rcv_evidenceLine "$release" "line_statement(id) IN (SELECT id FROM s_rcv)" "$work")) TO '$work/sub/rcv_evidenceLine.parquet' (FORMAT parquet);"
+    echo "COPY ($(as_of_where variation "$release" "id_int(id) IN (SELECT variation_id FROM affected)" "$work")) TO '$work/sub/variation.parquet' (FORMAT parquet);"
+    echo "COPY ($(as_of_where vcv_evidenceLine "$release" "line_statement(id) IN (SELECT id FROM s_vcv)" "$work")) TO '$work/sub/vcv_evidenceLine.parquet' (FORMAT parquet);"
+    echo "COPY ($(as_of_where rcv_evidenceLine "$release" "line_statement(id) IN (SELECT id FROM s_rcv)" "$work")) TO '$work/sub/rcv_evidenceLine.parquet' (FORMAT parquet);"
     echo "COPY ($(as_of_where evidenceLine "$release" "target_proposition_id IN (SELECT id FROM props)" "$work")) TO '$work/sub/evidenceLine.parquet' (FORMAT parquet);"
     # The lookups the load joins to, whole; the genome tables only for the delta's own records.
     for t in condition conditionSet submitter gene therapy therapyGroup; do

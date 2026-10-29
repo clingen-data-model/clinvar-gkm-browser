@@ -146,7 +146,7 @@ Each delta is applied to the derived tables directly, re-deriving only what it t
 
 Nearly every derived table is grouped by variant (`variant`, `variant_*`, `scv`, `scv_condition`, the statements, the pairs), which is what makes step 4 possible.
 
-**A record can change what it points to under the same key.** In the 2026-10-24 delta, ClinVar deleted variant 4897201 and moved its SCV 7709478 to variant 13572. The SCV record didn't change; its proposition kept its key (`SCV007709478-PATH`) and changed subject. So step 4 selects records by any key that matched at any release, then filters each key's row as of R. A filter applied before choosing the newest row would have found the old row.
+**A record can change what it points to under the same key.** In the 2026-10-24 delta, ClinVar deleted variant 4897201 and moved its SCV 7709478 to variant 13572. The SCV record didn't change; its proposition kept its key (`SCV007709478-PATH`) and changed subject. The delta said so plainly (the proposition as an updated record, the variation among the deleted keys), and step 3 already counted both variants as affected. The first version of step 4 didn't: it filtered the log's rows by subject before choosing each key's newest row, and so assumed a record's subject never changes. Step 4 now makes no such assumption for any table. Every selection takes the keys whose rows ever matched, resolves each key as of R, then applies the condition. 1 of the 4,166 propositions in the 2026-10-24 delta moved this way, and no statement changed its proposition.
 
 **The risk is step 3's list.** A dependency missed there leaves stale rows. The development checks below compare every applied release with a full derivation, which is how a missed dependency shows up.
 
