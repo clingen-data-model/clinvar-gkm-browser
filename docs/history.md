@@ -123,24 +123,57 @@ A derived row should change only when something it shows changed. Otherwise hist
 
 ## Applying a release
 
+`scripts/history.sh` does this: `init` starts a history from a converted full release, `apply` applies the next delta, and `check` is the development check below. The layout, under `data/history/<schema version>/`:
+- `log/<table>/release=<date>/data.parquet`: each release's records for one of `load.sql`'s 22 input tables, with `log_deleted` markers;
+- `derived/<table>.parquet`: the derived tables, the history tables with `valid_from` and `valid_to`. The vocabularies and `reference_issue` are copied from the starting release as they are;
+- `history_release.parquet`: the releases applied, with each one's origin, file and checksum.
+
 Each delta is applied to the derived tables directly, re-deriving only what it touches:
 
-1. **Check the chain** (the delta's `baseline_release` is the last release applied) and the bundle's sha256. Refuse a gap.
-2. **Convert and append** the delta's records and deletion markers to the log.
-3. **Lookup tables** (`gene`, `submitter`, `condition`, `conditionSet`, `allele`, `location`, `sequenceReference`, the copy-number tables) keep upstream's shape, so their changed rows apply as they are.
-4. **Collect the affected variants:**
+1. **Check the chain:** the delta's `baseline_release` must be the last release applied.
+2. **Convert and append** the delta's records and deletion markers to the log. A key deleted and re-added in the same delta keeps only its record.
+3. **Collect the affected variants:**
    - variations changed or deleted;
-   - the subjects of changed propositions;
-   - the variants of changed or deleted SCV, VCV and RCV statements and evidence lines;
-   - the variants of SCVs whose condition set changed.
+   - the old and new subjects of changed propositions;
+   - the variants of changed or deleted SCV, VCV and RCV statements and evidence lines (a VCV's accession is its variation ID);
+   - the variants of SCVs whose condition set's expansion changed: a changed set, or a set naming a changed set or a condition that was added, deleted, or became or stopped being a placeholder.
 
-   Deleted records are resolved against the previous state.
-5. **Re-derive those variants:** run `load.sql` over the log's state as of R, limited to the affected variants. That includes their unchanged records.
-6. **Compare** the result with those variants' current rows, by key and by a hash of each row's columns, and close and add rows as in the table above.
+   Old variants come from the history's current rows, or the log as of the previous release.
+4. **Re-derive those variants:** the log's state as of R, limited to their records (unchanged ones included), plus the whole of the small lookups the load joins to (`condition`, `conditionSet`, `submitter`, `gene`) and the delta's own genome records. `load.sql` and `validate.sql` run on it unchanged.
+5. **Compare** the result with the current rows, by a hash of every column (no derived table has two identical rows), and close and add rows as in the table above:
+   - tables grouped by variant: the affected variants' rows;
+   - lookups (`gene`, `submitter`, `condition`, `conditionSet`, `allele`, `location`, `sequenceReference`, the copy-number tables): the delta's keys, since each row is one upstream record.
 
-Nearly every derived table is grouped by variant (`variant`, `variant_*`, `scv`, `scv_condition`, the statements, the pairs), which is what makes step 5 possible. The 2026-10-24 delta touches on the order of 10,000 of about 4 million variants.
+Nearly every derived table is grouped by variant (`variant`, `variant_*`, `scv`, `scv_condition`, the statements, the pairs), which is what makes step 4 possible.
 
-**The risk is step 4's list.** A dependency missed there leaves stale rows. The development checks below compare every applied release with a full derivation, which is how a missed dependency shows up.
+**A record can change what it points to under the same key.** In the 2026-10-24 delta, ClinVar deleted variant 4897201 and moved its SCV 7709478 to variant 13572. The SCV record didn't change; its proposition kept its key (`SCV007709478-PATH`) and changed subject. So step 4 selects records by any key that matched at any release, then filters each key's row as of R. A filter applied before choosing the newest row would have found the old row.
+
+**The risk is step 3's list.** A dependency missed there leaves stale rows. The development checks below compare every applied release with a full derivation, which is how a missed dependency shows up.
+
+**Measured 29 October 2026**, starting from 2026-10-18 (converted from our parquet copy) and applying the 2026-10-24 delta, on the development Mac:
+
+| Step | Time | Notes |
+| --- | --- | --- |
+| `init` | 4.4 min | derive (2.7 min), then write the log (3.1 GB) and derived tables (1.9 GB) |
+| `apply` 2026-10-24 | 130 s | 11,178 affected variants; most of the time is rewriting the derived tables |
+| `check` as of 2026-10-24 | 9.5 min | the full state from the log, a full derivation, and a comparison of every table |
+
+The check found the history equal to a full derivation in all 18 tables, as of 2026-10-24 and, on a 12,000-variant sample, as of 2026-10-18 too.
+
+Rows closed and added by the 2026-10-24 delta, for scale:
+
+| Table | Closed | Added |
+| --- | --- | --- |
+| `variant` | 1,767 | 2,157 |
+| `variant_hgvs` | 44,008 | 48,826 |
+| `vcv_statement` | 2,080 | 3,304 |
+| `rcv_statement` | 1,318 | 2,718 |
+| `scv` | 2,633 | 3,403 |
+| `scv_classification_pair` | 700 | 3,646 |
+| `allele` | 1 | 368 |
+| `conditionSet` | 23 | 61 |
+
+The derived tables stayed at 1.9 GB.
 
 **Releases from now on** can be applied from the week's delta, or derived from the week's parquet set and compared in full. Either way the log gains the release's changes.
 
@@ -205,7 +238,7 @@ Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out
 1. This doc. Revised 29 October.
 2. **The converter:** the columns above, and a reader for bundles and deltas, one record per line. Done, re-checked against all of 2026-10-18 on 29 October.
 3. **Schema:** drop `scv.vcv_statement_id` and `scv.rcv_statement_id`, add `scv.tier` and `scv.rcv_accession`, and move the two queries that use them to the column join. Done 29 October; `validate.sql` checks the join against the evidence lines every load.
-4. **The log, derived history and applying a release,** tested on the fixture with a hand-made delta.
+4. **The log, derived history and applying a release** (`scripts/history.sh`). Done 29 October, checked on 2026-10-18 plus the 2026-10-24 delta, in full and on a sample.
 5. **Backfill** from the 2026-07 monthly, with the development checks, measuring time and growth per release.
 6. **API:** the as-of filter in the compiler and the one-off queries; a variant's versions and removals.
 7. **Web:** a history view on the variant page that renders a past version with its SCVs as they stood.
