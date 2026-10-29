@@ -183,7 +183,7 @@ The derived tables stayed at 1.9 GB.
 
 Start from the 2026-07 monthly (built from 2026-06-27) and apply the 17 deltas after it, through 2026-10-24 (decided 29 October 2026). Four months of weekly changes show how time and storage scale; starting from our 2026-10-18 parquet would give one delta.
 
-That's a 4.6 GB download plus 415 MB of deltas. Ask before downloading and running it.
+That's a 4.6 GB download plus 415 MB of deltas. Ask before downloading and running it. `scripts/backfill-history.sh 2026-07` does it all: it downloads the monthly and each delta from the line index (checking their sha256, and keeping them under `data/gkm-json/`), starts the history from the monthly, and applies the deltas in order. `CHECK=1` also checks every release against a full derivation.
 
 Upstream's known-issues page reports an allele mismatch between 2026-08-22 and 2026-08-29 in 1.0.1, fixed in 1.1.0. Its own delta-reconstruction check finds no difference on every section for all 16 consecutive pairs.
 
