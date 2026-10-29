@@ -26,11 +26,11 @@ export function AggregateCalls({
   typeLabels: Map<string, string>;
 }) {
   const roots = nodes.filter((n) => n.nodeKind === 'root');
-  const children = (key: number) => nodes.filter((n) => n.parentKey === key);
+  const children = (id: string) => nodes.filter((n) => n.parentStatementId === id);
   return (
     <div className="grid gap-4 md:grid-cols-2">
       {roots.map((root) => (
-        <section key={root.key} className="rounded-lg border border-border p-4">
+        <section key={root.statementId} className="rounded-lg border border-border p-4">
           <h3 className="text-sm text-muted-foreground">
             {typeLabels.get(root.classificationType) ?? root.classificationType}
           </h3>
@@ -43,9 +43,9 @@ export function AggregateCalls({
             <p className="mt-1 text-sm">{root.conflictingExplanation}</p>
           )}
           <ul className="mt-3 space-y-1 text-sm">
-            {children(root.key).map((level) => (
+            {children(root.statementId).map((level) => (
               <li
-                key={level.key}
+                key={level.statementId}
                 className={level.contributes === false ? 'text-muted-foreground' : ''}
               >
                 <span className="font-medium">
@@ -54,10 +54,10 @@ export function AggregateCalls({
                 {level.tier === null ? '' : ` ${level.tier}`}: {level.classification ?? '—'}
                 {level.scvCount > 0 ? ` (${count(level.scvCount, 'SCV')})` : ''}
                 {level.contributes === false ? ' — does not contribute' : ''}
-                {children(level.key).length > 0 ? (
+                {children(level.statementId).length > 0 ? (
                   <ul className="ml-4">
-                    {children(level.key).map((tier) => (
-                      <li key={tier.key}>
+                    {children(level.statementId).map((tier) => (
+                      <li key={tier.statementId}>
                         {tier.tier}: {tier.classification} ({count(tier.scvCount, 'SCV')})
                       </li>
                     ))}

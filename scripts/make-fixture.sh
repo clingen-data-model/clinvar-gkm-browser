@@ -32,35 +32,36 @@ CREATE TABLE scv AS SELECT * FROM src_scv WHERE variation_id IN (FROM pick) ORDE
 CREATE TABLE variant_gene AS SELECT * FROM src_variant_gene WHERE variation_id IN (FROM pick) ORDER BY ALL;
 CREATE TABLE variant_hgvs AS SELECT * FROM src_variant_hgvs WHERE variation_id IN (FROM pick) ORDER BY variation_id, ordinal;
 CREATE TABLE variant_xref AS SELECT * FROM src_variant_xref WHERE variation_id IN (FROM pick) ORDER BY variation_id;
-CREATE TABLE vcv_statement AS SELECT * FROM src_vcv_statement WHERE variation_id IN (FROM pick) ORDER BY vcv_statement_key;
-CREATE TABLE rcv_statement AS SELECT * FROM src_rcv_statement WHERE variation_id IN (FROM pick) ORDER BY rcv_statement_key;
-CREATE TABLE allele AS SELECT * FROM src_allele WHERE allele_id IN (SELECT allele_id FROM variant);
-CREATE TABLE copy_number AS SELECT * FROM src_copy_number WHERE copy_number_id IN (SELECT copy_number_id FROM variant);
-CREATE TABLE location AS SELECT * FROM src_location WHERE location_id IN (
-  SELECT location_id FROM allele UNION SELECT location_id FROM copy_number UNION SELECT defining_location_id FROM variant);
-CREATE TABLE sequence_reference AS FROM src_sequence_reference;
-CREATE TABLE scv_citation AS SELECT * FROM src_scv_citation WHERE scv_id IN (SELECT scv_id FROM scv) ORDER BY scv_id, ordinal;
+CREATE TABLE vcv_statement AS SELECT * FROM src_vcv_statement WHERE variation_id IN (FROM pick) ORDER BY variation_id, statement_id;
+CREATE TABLE rcv_statement AS SELECT * FROM src_rcv_statement WHERE variation_id IN (FROM pick) ORDER BY variation_id, statement_id;
+CREATE TABLE allele AS SELECT * FROM src_allele WHERE id IN (SELECT allele_id FROM variant);
+CREATE TABLE copyNumberCount AS SELECT * FROM src_copyNumberCount WHERE id IN (SELECT copy_number_count_id FROM variant);
+CREATE TABLE copyNumberChange AS SELECT * FROM src_copyNumberChange WHERE id IN (SELECT copy_number_change_id FROM variant);
+CREATE TABLE location AS SELECT * FROM src_location WHERE id IN (
+  SELECT location_id FROM allele UNION SELECT location_id FROM copyNumberCount
+  UNION SELECT location_id FROM copyNumberChange UNION SELECT defining_location_id FROM variant);
+CREATE TABLE sequenceReference AS FROM src_sequenceReference;
 CREATE TABLE scv_condition AS SELECT * FROM src_scv_condition WHERE scv_id IN (SELECT scv_id FROM scv) ORDER BY scv_id, condition_id;
-CREATE TABLE scv_submitted_condition AS SELECT * FROM src_scv_submitted_condition WHERE scv_id IN (SELECT scv_id FROM scv) ORDER BY scv_id, ordinal;
-CREATE TABLE scv_somatic_impact AS SELECT * FROM src_scv_somatic_impact WHERE scv_id IN (SELECT scv_id FROM scv);
 CREATE TABLE scv_classification_pair AS SELECT * FROM src_scv_classification_pair WHERE variation_id IN (FROM pick)
   ORDER BY a_submitter_id, variation_id, a_scv_id, b_scv_id;
-CREATE TABLE condition_set AS SELECT * FROM src_condition_set WHERE condition_set_key IN (
-  SELECT condition_set_key FROM scv UNION SELECT condition_set_key FROM vcv_statement
-  UNION SELECT condition_set_key FROM rcv_statement UNION SELECT via_condition_set_key FROM scv_condition);
-CREATE TABLE condition_set_member AS SELECT * FROM src_condition_set_member WHERE condition_set_key IN (SELECT condition_set_key FROM condition_set);
-CREATE TABLE condition AS SELECT * FROM src_condition WHERE condition_id IN (
-  SELECT condition_id FROM scv_condition UNION SELECT condition_id FROM scv_submitted_condition
+CREATE TABLE conditionSet AS SELECT * FROM src_conditionSet WHERE id IN (
+  SELECT condition_set_id FROM scv UNION SELECT condition_set_id FROM vcv_statement
+  UNION SELECT condition_set_id FROM rcv_statement UNION SELECT via_condition_set_id FROM scv_condition);
+-- Minted sets' member TraitSets too, one level deep.
+INSERT INTO conditionSet SELECT * FROM src_conditionSet WHERE id IN (SELECT unnest(concepts) FROM conditionSet)
+  AND id NOT IN (SELECT id FROM conditionSet);
+CREATE TABLE condition AS SELECT * FROM src_condition WHERE id IN (
+  SELECT condition_id FROM scv_condition
+  UNION SELECT CAST(split_part(m, ':', 2) AS INTEGER)
+        FROM (SELECT submitted_condition.normalized_match AS m FROM scv
+              UNION ALL SELECT c.normalized_match FROM (SELECT unnest(submitted_condition_set.concepts) AS c FROM scv))
+        WHERE m LIKE 'clinvar.trait:%'
   UNION SELECT condition_id FROM vcv_statement UNION SELECT condition_id FROM rcv_statement
-  UNION SELECT condition_id FROM condition_set_member UNION SELECT condition_id FROM scv_somatic_impact
-  UNION SELECT condition_qualifier_id FROM scv_somatic_impact) ORDER BY condition_id;
-CREATE TABLE condition_xref AS SELECT * FROM src_condition_xref WHERE condition_id IN (SELECT condition_id FROM condition);
-CREATE TABLE gene AS SELECT * FROM src_gene WHERE gene_id IN (
-  SELECT gene_id FROM variant_gene UNION SELECT gene_context_id FROM scv) ORDER BY gene_id;
-CREATE TABLE submitter AS SELECT * FROM src_submitter WHERE submitter_id IN (SELECT submitter_id FROM scv) ORDER BY submitter_id;
-CREATE TABLE therapy AS FROM src_therapy;
-CREATE TABLE therapy_group AS FROM src_therapy_group;
-CREATE TABLE therapy_group_member AS FROM src_therapy_group_member;
+  UNION SELECT CAST(split_part(c, ':', 2) AS INTEGER)
+        FROM (SELECT unnest(concepts) AS c FROM conditionSet) WHERE c LIKE 'clinvar.trait:%') ORDER BY id;
+CREATE TABLE gene AS SELECT * FROM src_gene WHERE id IN (
+  SELECT gene_id FROM variant_gene UNION SELECT gene_context_id FROM scv) ORDER BY id;
+CREATE TABLE submitter AS SELECT * FROM src_submitter WHERE id IN (SELECT submitter_id FROM scv) ORDER BY id;
 CREATE TABLE classification_type AS FROM src_classification_type;
 CREATE TABLE classification_term AS FROM src_classification_term;
 CREATE TABLE submission_level AS FROM src_submission_level;

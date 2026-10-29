@@ -53,7 +53,7 @@ fi
 # REFERENCES clauses declare relationships; they are checked, not enforced (docs/schema.md).
 # Primary keys stay, so duplicate ids fail the load.
 schema_sql="$tmp_dir/schema.sql"
-sed -E 's/ REFERENCES [a-z_]+ \([a-z_]+\)//' "$SQL_DIR/schema.sql" >"$schema_sql"
+sed -E 's/ REFERENCES [A-Za-z_]+ \([a-z_]+\)//' "$SQL_DIR/schema.sql" >"$schema_sql"
 
 # One check per declared reference, recording dangling values in reference_issue.
 checks_sql="$tmp_dir/reference-checks.sql"
@@ -79,11 +79,21 @@ FROM reference_issue GROUP BY ALL ORDER BY rows_affected DESC;
 .read $SQL_DIR/validate.sql
 DETACH stage;
 
--- Write every table as parquet, in its stored (sorted) order. EXPORT DATABASE also writes
--- schema.sql and load.sql, which recreate a DuckDB database from the files.
+-- Write every table as parquet, in its stored (sorted) order, named as the table. (EXPORT
+-- DATABASE would lower-case upstream's camelCase names, e.g. conditionset.parquet.)
 DROP TABLE validation_problem;
 SET preserve_insertion_order = true;
-EXPORT DATABASE '$out_dir' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000);
+.echo off
+.timer off
+.mode list
+.headers off
+.output $tmp_dir/export.sql
+SELECT 'COPY "' || table_name || '" TO ''$out_dir/' || table_name
+       || '.parquet'' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 100000);'
+FROM duckdb_tables() WHERE database_name = current_database() ORDER BY table_name;
+.output
+.timer on
+.read $tmp_dir/export.sql
 COPY (
     SELECT r.*,
            (SELECT list({name: table_name, rows: estimated_size} ORDER BY table_name) FROM duckdb_tables()) AS tables

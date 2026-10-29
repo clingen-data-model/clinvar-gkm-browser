@@ -38,16 +38,17 @@ export async function variantDetail(
          v.clinvar_subclass_type AS "subclassType",
          v.cytogenetic_location AS "cytogeneticLocation",
          coalesce(v.vrs_preprocessing_issue, v.vrs_processing_exception) AS "vrsIssue",
-         v.allele_id AS allele_id, v.copy_number_id AS copy_number_id,
+         v.allele_id AS allele_id,
+         coalesce(v.copy_number_count_id, v.copy_number_change_id) AS copy_number_id,
          (SELECT count(*)::INTEGER FROM scv WHERE scv.variation_id = v.variation_id) AS "scvCount"
        FROM variant v WHERE v.variation_id = $1`,
       [variationId],
     ),
     db.query(
       release,
-      `SELECT vg.gene_id AS "geneId", g.symbol AS symbol, vg.relationship_type AS "relationshipType", vg.source AS source
-       FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
-       WHERE vg.variation_id = $1 ORDER BY g.symbol`,
+      `SELECT vg.gene_id AS "geneId", g.name AS symbol, vg.relationship_type AS "relationshipType", vg.source AS source
+       FROM variant_gene vg LEFT JOIN gene g ON g.id = vg.gene_id
+       WHERE vg.variation_id = $1 ORDER BY g.name`,
       [variationId],
     ),
     db.query(
@@ -67,8 +68,8 @@ export async function variantDetail(
     ),
     db.query(
       release,
-      `SELECT vs.vcv_statement_key AS key, vs.statement_id AS "statementId",
-              vs.parent_key AS "parentKey", vs.classification_type AS "classificationType",
+      `SELECT vs.statement_id AS "statementId",
+              vs.parent_statement_id AS "parentStatementId", vs.classification_type AS "classificationType",
               vs.node_kind AS "nodeKind", vs.submission_level AS "submissionLevel", vs.tier AS tier,
               vs.contributes AS contributes, vs.classification AS classification,
               vs.conflicting_explanation AS "conflictingExplanation",
@@ -77,9 +78,9 @@ export async function variantDetail(
        FROM vcv_statement vs
        LEFT JOIN review_status rs ON rs.status = vs.review_status
        -- The variant's SCVs per statement, counted once rather than per statement row.
-       LEFT JOIN (SELECT vcv_statement_key, count(*) AS scvs FROM scv
-                  WHERE variation_id = $1 GROUP BY vcv_statement_key) n
-         ON n.vcv_statement_key = vs.vcv_statement_key
+       LEFT JOIN (SELECT vcv_statement_id, count(*) AS scvs FROM scv
+                  WHERE variation_id = $1 GROUP BY vcv_statement_id) n
+         ON n.vcv_statement_id = vs.statement_id
        LEFT JOIN classification_type t ON t.code = vs.classification_type
        LEFT JOIN submission_level sl ON sl.code = vs.submission_level
        WHERE vs.variation_id = $1
@@ -115,13 +116,13 @@ async function vrsMember(
   if (ids.allele_id !== null) {
     const rows = await db.query(
       release,
-      `SELECT a.allele_id AS id, 'allele' AS kind, sr.accession AS "sequenceAccession",
+      `SELECT a.id AS id, 'allele' AS kind, sr.name AS "sequenceAccession",
               l.loc_start::INTEGER AS start, l.loc_end::INTEGER AS "end",
-              a.hgvs_g AS "hgvsG", a.spdi AS spdi, a.vcf_key AS "vcfKey"
+              a.name AS "hgvsG", a.spdi AS spdi, a.vcf_key AS "vcfKey"
        FROM allele a
-       LEFT JOIN location l ON l.location_id = a.location_id
-       LEFT JOIN sequence_reference sr ON sr.sequence_reference_id = l.sequence_reference_id
-       WHERE a.allele_id = $1`,
+       LEFT JOIN location l ON l.id = a.location_id
+       LEFT JOIN sequenceReference sr ON sr.id = l.sequence_reference_id
+       WHERE a.id = $1`,
       [ids.allele_id],
     );
     return rows[0] === undefined ? null : VariantDetail.shape.vrs.parse(rows[0]);
@@ -129,14 +130,14 @@ async function vrsMember(
   if (ids.copy_number_id !== null) {
     const rows = await db.query(
       release,
-      `SELECT cn.copy_number_id AS id, 'copy_number' AS kind, sr.accession AS "sequenceAccession",
+      `SELECT cn.id AS id, 'copy_number' AS kind, sr.name AS "sequenceAccession",
               coalesce(l.loc_start, l.loc_start_max)::INTEGER AS start,
               coalesce(l.loc_end, l.loc_end_min)::INTEGER AS "end",
               NULL AS "hgvsG", NULL AS spdi, NULL AS "vcfKey"
-       FROM copy_number cn
-       LEFT JOIN location l ON l.location_id = cn.location_id
-       LEFT JOIN sequence_reference sr ON sr.sequence_reference_id = l.sequence_reference_id
-       WHERE cn.copy_number_id = $1`,
+       FROM (SELECT id, location_id FROM copyNumberCount WHERE id = $1
+             UNION ALL SELECT id, location_id FROM copyNumberChange WHERE id = $1) cn
+       LEFT JOIN location l ON l.id = cn.location_id
+       LEFT JOIN sequenceReference sr ON sr.id = l.sequence_reference_id`,
       [ids.copy_number_id],
     );
     return rows[0] === undefined ? null : VariantDetail.shape.vrs.parse(rows[0]);
@@ -228,9 +229,9 @@ export async function listVariants(
     ),
     db.query(
       release,
-      `SELECT vg.variation_id AS variation_id, list(coalesce(g.symbol, 'Gene ' || vg.gene_id) ORDER BY g.symbol)[1:5] AS genes,
+      `SELECT vg.variation_id AS variation_id, list(coalesce(g.name, 'Gene ' || vg.gene_id) ORDER BY g.name)[1:5] AS genes,
               count(*)::INTEGER AS gene_count
-       FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
+       FROM variant_gene vg LEFT JOIN gene g ON g.id = vg.gene_id
        WHERE vg.variation_id IN (${inIds}) GROUP BY 1`,
       ids,
     ),

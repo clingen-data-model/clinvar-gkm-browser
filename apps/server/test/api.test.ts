@@ -67,7 +67,7 @@ describe('variants', () => {
     expect(variant.genes.map((g) => g.symbol)).toContain('HFE');
     const roots = variant.aggregates.filter((a) => a.nodeKind === 'root');
     expect(roots.length).toBeGreaterThan(0);
-    expect(roots.every((a) => a.parentKey === null)).toBe(true);
+    expect(roots.every((a) => a.parentStatementId === null)).toBe(true);
   });
 
   it("lists a variant's SCVs with normalized terms", async () => {

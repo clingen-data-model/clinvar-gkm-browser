@@ -12,25 +12,25 @@ function emit(child, col, parent, pcol) {
     printf "WHERE c.%s IS NOT NULL GROUP BY c.%s;\n\n", col, col
 }
 
-match($0, /^CREATE TABLE [a-z_]+/) {
+match($0, /^CREATE TABLE [A-Za-z_]+/) {
     table = substr($0, 14, RLENGTH - 13)
     pending = ""
     next
 }
 
 # A reference declared in a comment applies to the next column.
-/^ *-- REFERENCES [a-z_]+ \([a-z_]+\) NOT ENFORCED/ {
-    match($0, /REFERENCES [a-z_]+ \([a-z_]+\)/)
+/^ *-- REFERENCES [A-Za-z_]+ \([a-z_]+\) NOT ENFORCED/ {
+    match($0, /REFERENCES [A-Za-z_]+ \([a-z_]+\)/)
     pending = substr($0, RSTART + 11, RLENGTH - 11)
     next
 }
 
 /^ *--/ { next }
 
-table != "" && /^    [a-z_]+ / {
+table != "" && /^    [a-z][A-Za-z_]* / {
     col = $1
     ref = ""
-    if (match($0, /REFERENCES [a-z_]+ \([a-z_]+\)/)) {
+    if (match($0, /REFERENCES [A-Za-z_]+ \([a-z_]+\)/)) {
         ref = substr($0, RSTART + 11, RLENGTH - 11)
     } else if (pending != "") {
         ref = pending

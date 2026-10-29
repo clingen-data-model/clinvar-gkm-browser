@@ -29,8 +29,8 @@ export function scvRowColumns(geneRelationship = 'NULL'): string {
   s.date_last_evaluated::VARCHAR AS "dateLastEvaluated",
   s.date_submitted::VARCHAR AS "dateSubmitted",
   coalesce((
-    SELECT list({'conditionId': c.condition_id, 'name': c.name} ORDER BY c.name)
-    FROM scv_condition sc JOIN condition c ON c.condition_id = sc.condition_id
+    SELECT list({'conditionId': c.id, 'name': c.name} ORDER BY c.name)
+    FROM scv_condition sc JOIN condition c ON c.id = sc.condition_id
     WHERE sc.scv_id = s.scv_id
   ), []) AS conditions,
   s.description AS comment,
@@ -44,16 +44,16 @@ export function scvRowColumns(geneRelationship = 'NULL'): string {
 function geneRelationshipSql(gene: string): string {
   return `(
     SELECT {'relationship': max(CASE WHEN vg.gene_id = ${gene} THEN ${RELATIONSHIP_CODE_SQL} END),
-            'otherGenes': coalesce(list(coalesce(g.symbol, 'Gene ' || vg.gene_id) ORDER BY g.symbol)
+            'otherGenes': coalesce(list(coalesce(g.name, 'Gene ' || vg.gene_id) ORDER BY g.name)
                                      FILTER (WHERE vg.gene_id <> ${gene}), [])[1:5],
             'otherGeneCount': (count(*) FILTER (WHERE vg.gene_id <> ${gene}))::INTEGER}
-    FROM variant_gene vg LEFT JOIN gene g ON g.gene_id = vg.gene_id
+    FROM variant_gene vg LEFT JOIN gene g ON g.id = vg.gene_id
     WHERE vg.variation_id = s.variation_id
   )`;
 }
 
 export const SCV_ROW_JOINS = `
-  LEFT JOIN submitter sub ON sub.submitter_id = s.submitter_id
+  LEFT JOIN submitter sub ON sub.id = s.submitter_id
   LEFT JOIN review_status rs ON rs.status = s.review_status
   LEFT JOIN classification_term ct ON ct.classification_type = s.classification_type AND ct.term = s.term`;
 
@@ -75,11 +75,18 @@ export async function variantScvs(
   return z.array(ScvRow).parse(rows);
 }
 
+/** A submitted condition (a struct of scv.submitted_condition, or of its set's concepts) as JSON. */
+function submittedConditionSql(c: string): string {
+  return `{'name': ${c}.name, 'medgenId': ${c}.medgen_id,
+           'conditionId': CASE WHEN ${c}.normalized_match LIKE 'clinvar.trait:%'
+                               THEN split_part(${c}.normalized_match, ':', 2)::INTEGER END,
+           'resolution': ${c}.normalized_resolution}`;
+}
+
 /**
  * One SCV with every field. scv is sorted by variant, not SCV, so the SCV's variant is looked up
- * first; the main row then reads only that variant's rows, and the child lists (each sorted by
- * scv_id) are separate small queries. One combined query, with correlated subqueries, took
- * about 10x longer: DuckDB joined the child tables whole before filtering.
+ * first, and the row is then read from only that variant's rows. Citations and submitted
+ * conditions are lists on the row, as upstream publishes them.
  */
 export async function scvDetail(
   db: Database,
@@ -89,10 +96,9 @@ export async function scvDetail(
   const found = await db.query(release, 'SELECT variation_id FROM scv WHERE scv_id = $1', [scvId]);
   const variationId = z.object({ variation_id: z.int() }).optional().parse(found[0])?.variation_id;
   if (variationId === undefined) return null;
-  const [rows, submittedConditions, citations] = await Promise.all([
-    db.query(
-      release,
-      `SELECT ${scvRowColumns()},
+  const rows = await db.query(
+    release,
+    `SELECT ${scvRowColumns()},
          s.classification_code AS "classificationCode",
          s.submitted_classification AS "submittedClassification",
          s.direction AS direction,
@@ -107,29 +113,20 @@ export async function scvDetail(
            {'geneId': s.gene_context_id, 'symbol': s.gene_context_symbol, 'source': s.gene_context_source}
          END AS "geneContext",
          s.submitted_gene_symbols AS "submittedGeneSymbols",
-         v.statement_id AS "vcvStatementId",
-         r.statement_id AS "rcvStatementId"
+         s.vcv_statement_id AS "vcvStatementId",
+         s.rcv_statement_id AS "rcvStatementId",
+         list_concat(
+           CASE WHEN s.submitted_condition IS NULL THEN [] ELSE [${submittedConditionSql('s.submitted_condition')}] END,
+           coalesce([${submittedConditionSql('c')} for c in s.submitted_condition_set.concepts], [])
+         ) AS "submittedConditions",
+         coalesce([{'pmid': c.pmid, 'doi': c.doi, 'urls': c.urls, 'name': c.name} for c in s.reported_in], [])
+           AS citations
        FROM scv s ${SCV_ROW_JOINS}
-       LEFT JOIN vcv_statement v ON v.vcv_statement_key = s.vcv_statement_key AND v.variation_id = $2
-       LEFT JOIN rcv_statement r ON r.rcv_statement_key = s.rcv_statement_key AND r.variation_id = $2
        WHERE s.variation_id = $2 AND s.scv_id = $1`,
-      [scvId, variationId],
-    ),
-    db.query(
-      release,
-      `SELECT name, medgen_id AS "medgenId", condition_id AS "conditionId",
-              normalized_resolution AS resolution
-       FROM scv_submitted_condition WHERE scv_id = $1 ORDER BY ordinal`,
-      [scvId],
-    ),
-    db.query(
-      release,
-      `SELECT pmid, doi, urls, name FROM scv_citation WHERE scv_id = $1 ORDER BY ordinal`,
-      [scvId],
-    ),
-  ]);
+    [scvId, variationId],
+  );
   const row = rows[0];
-  return row === undefined ? null : ScvDetail.parse({ ...row, submittedConditions, citations });
+  return row === undefined ? null : ScvDetail.parse(row);
 }
 
 /** Sort keys an SCV list accepts, and their columns. Every sort ends with the key, for stable pages. */

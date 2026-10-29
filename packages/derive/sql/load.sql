@@ -4,7 +4,6 @@
 -- and a scratch database attached as stage, for intermediate tables (deleted after the load):
 --   SET VARIABLE src = 'data/source/2026-10-18';
 --   ATTACH 'data/tmp/stage.duckdb' AS stage;
--- Tables are filled parents first, because every FOREIGN KEY is checked as rows are inserted.
 -- See docs/schema.md for the column sources.
 
 CREATE OR REPLACE TEMP MACRO src_file(name) AS getvariable('src') || '/' || name;
@@ -19,7 +18,7 @@ CREATE TEMP MACRO contribution(cs, activity) AS list_filter(cs, lambda c: c.acti
 -- All propositions, 28M rows, read once.
 CREATE TABLE stage.prop AS
 SELECT id, type, predicate, id_int(subject_variant_id) AS variation_id, object_id, object_type,
-       condition_qualifier_id, gene_context_id, gene_context_name, submitted_gene_symbols,
+       gene_context_id, gene_context_name, submitted_gene_symbols,
        gene_context_source, mode_of_inheritance, penetrance
 FROM read_parquet(src_file('proposition*.parquet'));
 
@@ -36,7 +35,7 @@ FROM (SELECT unnest(files) AS f FROM read_json(src_file('manifest.json')));
 
 -- Genome -----------------------------------------------------------------------------------------
 
-INSERT INTO sequence_reference
+INSERT INTO sequenceReference
 SELECT id, name, molecule_type FROM read_parquet(src_file('sequenceReference.parquet'));
 
 INSERT INTO location
@@ -67,10 +66,11 @@ SELECT id, location_id, name, spdi, vcf_key,
        CAST(state->>'repeatSubunitLength' AS BIGINT)
 FROM x;
 
-INSERT INTO copy_number
-SELECT id, 'count', location_id, copies, NULL FROM read_parquet(src_file('copyNumberCount.parquet'))
-UNION ALL
-SELECT id, 'change', location_id, NULL, copy_change FROM read_parquet(src_file('copyNumberChange.parquet'));
+INSERT INTO copyNumberCount
+SELECT id, location_id, copies FROM read_parquet(src_file('copyNumberCount.parquet'));
+
+INSERT INTO copyNumberChange
+SELECT id, location_id, copy_change FROM read_parquet(src_file('copyNumberChange.parquet'));
 
 -- Genes and variants -----------------------------------------------------------------------------
 
@@ -93,7 +93,8 @@ SELECT v.variation_id,
        ext_string(v.extensions, 'vrsPreProcessingIssue'),
        ext_string(v.extensions, 'vrsProcessingException'),
        CASE WHEN v.members[1] LIKE 'ga4gh:VA.%' THEN v.members[1] END,
-       CASE WHEN v.members[1] LIKE 'ga4gh:CN.%' OR v.members[1] LIKE 'ga4gh:CX.%' THEN v.members[1] END,
+       CASE WHEN v.members[1] LIKE 'ga4gh:CN.%' THEN v.members[1] END,
+       CASE WHEN v.members[1] LIKE 'ga4gh:CX.%' THEN v.members[1] END,
        list_filter(v.constraints, lambda c: c.type = 'DefiningLocationConstraint')[1].location
 FROM stage.variation v
 LEFT JOIN (
@@ -129,62 +130,38 @@ DROP TABLE stage.variation;
 -- Conditions and therapies -----------------------------------------------------------------------
 
 INSERT INTO condition
-SELECT id_int(id), name, conceptType, primaryCoding.code, aliases,
+SELECT id_int(id), name, conceptType, aliases, primaryCoding, mappings,
        lower(name) IN ('not provided', 'not specified')
 FROM read_parquet(src_file('condition.parquet'))
 ORDER BY 1;
 
-INSERT INTO condition_xref
-SELECT id_int(id), m.coding.system, m.coding.code, m.coding.name, m.relation
-FROM (SELECT id, unnest(mappings) AS m FROM read_parquet(src_file('condition.parquet')))
-ORDER BY 1;
-
-INSERT INTO condition_set
-SELECT row_number() OVER (ORDER BY id), id,
-       CASE WHEN id LIKE 'clinvar.traitset:%' THEN id_int(id) END,
-       conceptSetType, membershipOperator
-FROM read_parquet(src_file('conditionSet.parquet'));
-
-INSERT INTO condition_set_member
-SELECT s.condition_set_key,
-       CASE WHEN m.member LIKE 'clinvar.trait:%' THEN id_int(m.member) END,
-       ms.condition_set_key
-FROM (SELECT id, unnest(concepts) AS member FROM read_parquet(src_file('conditionSet.parquet'))) m
-JOIN condition_set s ON s.condition_set_id = m.id
-LEFT JOIN condition_set ms ON ms.condition_set_id = m.member;
+INSERT INTO conditionSet
+SELECT id, conceptSetType, membershipOperator, concepts
+FROM read_parquet(src_file('conditionSet.parquet'))
+ORDER BY id;
 
 -- Every condition reachable from a set, nested TraitSets expanded, for statement and SCV rollups.
 CREATE TABLE stage.condition_set_condition AS
-SELECT condition_set_key, condition_id FROM condition_set_member WHERE condition_id IS NOT NULL
+WITH m AS (SELECT id AS condition_set_id, unnest(concepts) AS member FROM conditionSet)
+SELECT condition_set_id, id_int(member) AS condition_id FROM m WHERE member LIKE 'clinvar.trait:%'
 UNION
-SELECT m.condition_set_key, n.condition_id
-FROM condition_set_member m JOIN condition_set_member n ON n.condition_set_key = m.member_set_key
-WHERE n.condition_id IS NOT NULL;
+SELECT m.condition_set_id, id_int(n.member)
+FROM m JOIN m n ON n.condition_set_id = m.member
+WHERE n.member LIKE 'clinvar.trait:%';
 
 -- Each set's conditions as a list, and whether they're all placeholders, for scv.condition_ids.
 CREATE TABLE stage.set_conditions AS
-SELECT x.condition_set_key, list(x.condition_id ORDER BY x.condition_id) AS ids,
+SELECT x.condition_set_id, list(x.condition_id ORDER BY x.condition_id) AS ids,
        bool_and(c.placeholder) AS unspecified
-FROM stage.condition_set_condition x JOIN condition c ON c.condition_id = x.condition_id
+FROM stage.condition_set_condition x JOIN condition c ON c.id = x.condition_id
 GROUP BY 1;
-
-INSERT INTO therapy
-SELECT key, name FROM read_parquet(src_file('therapy.parquet'));
-
-INSERT INTO therapy_group
-SELECT key, membership_operator FROM read_parquet(src_file('therapyGroup.parquet'));
-
-INSERT INTO therapy_group_member
-SELECT DISTINCT key, unnest(members) FROM read_parquet(src_file('therapyGroup.parquet'));
 
 INSERT INTO submitter
 SELECT id_int(id), name FROM read_parquet(src_file('submitter.parquet')) ORDER BY 1;
 
 -- Aggregate statements ---------------------------------------------------------------------------
 --
--- VCV and RCV statements are staged together (their ids can't collide), then each tree is
--- inserted in three passes (roots, levels, tiers) so a parent row exists before the rows that
--- reference it.
+-- VCV and RCV statements are staged together (their ids can't collide), then split by tree.
 
 CREATE TEMP MACRO statement_parts(id) AS
     regexp_extract(id, '^[VR]CV(\d+)\.(\d+)-([GS])-([A-Z]+)(?:-(PG|EP|CP|NOCP|NOCL|FLAG))?(?:-(T\d))?$',
@@ -197,7 +174,7 @@ SELECT regexp_extract(id, '^(.*)\.(contributing|non-contributing)$', 1) AS citin
        unnest(evidence_items) AS cited
 FROM read_parquet([src_file('vcv_evidenceLine.parquet'), src_file('rcv_evidenceLine.parquet')]);
 
-CREATE TABLE stage.statement_staged AS
+CREATE TABLE stage.statement_row AS
 WITH s AS (
     SELECT lower(left(st.id, 3)) AS tree, st.id, statement_parts(st.id) AS p, st.classification,
            st.extensions, st.direction, st.strength, pr.predicate, pr.object_id, pr.object_type,
@@ -206,7 +183,6 @@ WITH s AS (
     JOIN stage.prop pr ON pr.id = st.proposition_id
 )
 SELECT s.tree,
-       row_number() OVER (PARTITION BY s.tree ORDER BY s.variation_id, s.id) AS statement_key,
        s.id AS statement_id,
        CAST(s.p.accession AS INTEGER) AS accession,
        CAST(s.p.version AS INTEGER) AS version,
@@ -228,61 +204,28 @@ SELECT s.tree,
 FROM s
 LEFT JOIN stage.edge e ON e.cited = s.id;
 
-CREATE VIEW stage.statement_row AS
-SELECT s.*, parent.statement_key AS parent_key, cs.condition_set_key
-FROM stage.statement_staged s
-LEFT JOIN stage.statement_staged parent ON parent.tree = s.tree AND parent.statement_id = s.parent_statement_id
-LEFT JOIN condition_set cs ON cs.condition_set_id = s.condition_set_id;
-
 INSERT INTO vcv_statement BY NAME
-SELECT statement_key AS vcv_statement_key, statement_id, variation_id, classification_type, node_kind,
-       submission_level, tier, parent_key, contributes, classification, conflicting_explanation,
-       review_status, direction, strength, predicate, condition_id, condition_set_key
-FROM stage.statement_row WHERE tree = 'vcv' AND node_kind = 'root' ORDER BY statement_key;
-
-INSERT INTO vcv_statement BY NAME
-SELECT statement_key AS vcv_statement_key, statement_id, variation_id, classification_type, node_kind,
-       submission_level, tier, parent_key, contributes, classification, conflicting_explanation,
-       review_status, direction, strength, predicate, condition_id, condition_set_key
-FROM stage.statement_row WHERE tree = 'vcv' AND node_kind = 'level' ORDER BY statement_key;
-
-INSERT INTO vcv_statement BY NAME
-SELECT statement_key AS vcv_statement_key, statement_id, variation_id, classification_type, node_kind,
-       submission_level, tier, parent_key, contributes, classification, conflicting_explanation,
-       review_status, direction, strength, predicate, condition_id, condition_set_key
-FROM stage.statement_row WHERE tree = 'vcv' AND node_kind = 'tier' ORDER BY statement_key;
+SELECT statement_id, variation_id, classification_type, node_kind, submission_level, tier,
+       parent_statement_id, contributes, classification, conflicting_explanation, review_status,
+       direction, strength, predicate, condition_id, condition_set_id
+FROM stage.statement_row WHERE tree = 'vcv' ORDER BY variation_id, statement_id;
 
 INSERT INTO rcv_statement BY NAME
-SELECT statement_key AS rcv_statement_key, statement_id, accession AS rcv_accession, version AS rcv_version,
-       variation_id, classification_type, node_kind, submission_level, tier, parent_key, contributes,
+SELECT statement_id, accession AS rcv_accession, version AS rcv_version, variation_id,
+       classification_type, node_kind, submission_level, tier, parent_statement_id, contributes,
        classification, conflicting_explanation, review_status, direction, strength, predicate,
-       condition_id, condition_set_key
-FROM stage.statement_row WHERE tree = 'rcv' AND node_kind = 'root' ORDER BY statement_key;
-
-INSERT INTO rcv_statement BY NAME
-SELECT statement_key AS rcv_statement_key, statement_id, accession AS rcv_accession, version AS rcv_version,
-       variation_id, classification_type, node_kind, submission_level, tier, parent_key, contributes,
-       classification, conflicting_explanation, review_status, direction, strength, predicate,
-       condition_id, condition_set_key
-FROM stage.statement_row WHERE tree = 'rcv' AND node_kind = 'level' ORDER BY statement_key;
-
-INSERT INTO rcv_statement BY NAME
-SELECT statement_key AS rcv_statement_key, statement_id, accession AS rcv_accession, version AS rcv_version,
-       variation_id, classification_type, node_kind, submission_level, tier, parent_key, contributes,
-       classification, conflicting_explanation, review_status, direction, strength, predicate,
-       condition_id, condition_set_key
-FROM stage.statement_row WHERE tree = 'rcv' AND node_kind = 'tier' ORDER BY statement_key;
+       condition_id, condition_set_id
+FROM stage.statement_row WHERE tree = 'rcv' ORDER BY variation_id, statement_id;
 
 -- Submissions ------------------------------------------------------------------------------------
 
 -- The statement citing each SCV, per tree.
 CREATE TABLE stage.scv_citing AS
-SELECT e.cited AS scv_statement_id, s.tree, s.statement_key
-FROM stage.edge e JOIN stage.statement_staged s ON s.statement_id = e.citing
-WHERE e.cited LIKE 'clinvar.submission:%';
+SELECT cited AS scv_statement_id, lower(left(citing, 3)) AS tree, citing AS statement_id
+FROM stage.edge
+WHERE cited LIKE 'clinvar.submission:%';
 
-DROP VIEW stage.statement_row;
-DROP TABLE stage.statement_staged;
+DROP TABLE stage.statement_row;
 DROP TABLE stage.edge;
 
 CREATE TEMP MACRO scv_number(id) AS CAST(regexp_extract(id, 'SCV(\d+)\.', 1) AS INTEGER);
@@ -309,7 +252,10 @@ SELECT id AS scv_statement_id,
        contribution(contributions, 'submitted').date AS date_submitted,
        contribution(contributions, 'created').date AS date_created,
        contribution(contributions, 'evaluated').date AS date_last_evaluated,
-       ext_string(extensions, 'submittedScvLocalKey') AS local_key
+       ext_string(extensions, 'submittedScvLocalKey') AS local_key,
+       reportedIn AS reported_in,
+       list_filter(extensions, lambda x: x.name = 'submittedCondition')[1].value_submitted_condition AS submitted_condition,
+       list_filter(extensions, lambda x: x.name = 'submittedConditionSet')[1].value_submitted_condition_set AS submitted_condition_set
 FROM read_parquet(src_file('scv.parquet'));
 
 -- Only the SCV propositions (6.85M of 28M).
@@ -324,7 +270,7 @@ SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification
        s.date_last_evaluated, s.local_key,
        p.predicate,
        CASE WHEN p.object_type = 'condition' THEN id_int(p.object_id) END,
-       cs.condition_set_key,
+       CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END,
        CASE WHEN p.object_type = 'condition' THEN [id_int(p.object_id)] ELSE coalesce(sc.ids, []) END,
        coalesce(CASE WHEN p.object_type = 'condition' THEN oc.placeholder ELSE sc.unspecified END, false),
        p.mode_of_inheritance,
@@ -333,16 +279,18 @@ SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification
        p.gene_context_name,
        p.gene_context_source,
        p.submitted_gene_symbols,
-       v.statement_key,
-       r.statement_key
+       v.statement_id,
+       r.statement_id,
+       s.reported_in,
+       s.submitted_condition,
+       s.submitted_condition_set
 FROM stage.scv_flat s
 JOIN stage.scv_prop p ON p.id = s.proposition_id
 LEFT JOIN classification_term ct
     ON ct.classification_type = s.classification_type AND ct.source_code = lower(s.classification_code)
--- CASE keeps this an equi-join; with AND in ON, DuckDB plans a nested loop (10 minutes here).
-LEFT JOIN condition_set cs ON cs.condition_set_id = CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END
-LEFT JOIN stage.set_conditions sc ON sc.condition_set_key = cs.condition_set_key
-LEFT JOIN condition oc ON oc.condition_id = CASE WHEN p.object_type = 'condition' THEN id_int(p.object_id) END
+-- CASE keeps these equi-joins; with AND in ON, DuckDB plans a nested loop (10 minutes here).
+LEFT JOIN stage.set_conditions sc ON sc.condition_set_id = CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END
+LEFT JOIN condition oc ON oc.id = CASE WHEN p.object_type = 'condition' THEN id_int(p.object_id) END
 LEFT JOIN stage.scv_citing v ON v.tree = 'vcv' AND v.scv_statement_id = s.scv_statement_id
 LEFT JOIN stage.scv_citing r ON r.tree = 'rcv' AND r.scv_statement_id = s.scv_statement_id
 ORDER BY p.variation_id, s.scv_id;
@@ -357,57 +305,12 @@ DROP TABLE stage.scv_flat;
 DROP TABLE stage.scv_prop;
 DROP TABLE stage.scv_citing;
 
-INSERT INTO scv_citation
-SELECT scv_id, ordinal, c.pmid, c.doi, c.urls, c.name, c.documentType
-FROM (SELECT scv_number(id) AS scv_id, unnest(reportedIn) AS c, unnest(range(1, len(reportedIn) + 1)) AS ordinal
-      FROM read_parquet(src_file('scv.parquet')))
-ORDER BY scv_id, ordinal;
-
-INSERT INTO scv_submitted_condition
-WITH x AS (
-    SELECT scv_number(id) AS scv_id, unnest(extensions) AS x FROM read_parquet(src_file('scv.parquet'))
-), c AS (
-    SELECT scv_id, 1 AS ordinal, x.value_submitted_condition.name, x.value_submitted_condition.type,
-           x.value_submitted_condition.medgen_id, x.value_submitted_condition.normalized_match,
-           x.value_submitted_condition.normalized_resolution, x.value_submitted_condition.mapping
-    FROM x
-    WHERE x.name = 'submittedCondition'
-    UNION ALL
-    SELECT scv_id, ordinal, m.name, m.type, m.medgen_id, m.normalized_match, m.normalized_resolution, m.mapping
-    FROM (SELECT scv_id, unnest(cs) AS m, unnest(range(1, len(cs) + 1)) AS ordinal
-          FROM (SELECT scv_id, x.value_submitted_condition_set.concepts AS cs
-                FROM x
-                WHERE x.name = 'submittedConditionSet'))
-)
-SELECT scv_id, ordinal, name, type, medgen_id,
-       CASE WHEN normalized_match LIKE 'clinvar.trait:%' THEN id_int(normalized_match) END,
-       normalized_resolution, mapping.type, mapping.ref, mapping.value
-FROM c
-ORDER BY scv_id, ordinal;
-
 INSERT INTO scv_condition
 SELECT scv_id, condition_id, NULL FROM scv WHERE condition_id IS NOT NULL
 UNION ALL
-SELECT s.scv_id, c.condition_id, s.condition_set_key
-FROM scv s JOIN stage.condition_set_condition c ON c.condition_set_key = s.condition_set_key
+SELECT s.scv_id, c.condition_id, s.condition_set_id
+FROM scv s JOIN stage.condition_set_condition c ON c.condition_set_id = s.condition_set_id
 ORDER BY 1, 2;
-
-INSERT INTO scv_somatic_impact
-SELECT scv_number(e.id),
-       regexp_extract(e.target_proposition_id, '-([A-Z]+)$', 1),
-       e.evidenceOutcome.name,
-       e.directionOfEvidenceProvided,
-       p.predicate,
-       CASE WHEN p.object_type = 'condition' THEN id_int(p.object_id) END,
-       cs.condition_set_key,
-       CASE WHEN p.object_type = 'therapy' THEN p.object_id END,
-       CASE WHEN p.object_type = 'therapyGroup' THEN p.object_id END,
-       id_int(p.condition_qualifier_id)
-FROM read_parquet(src_file('evidenceLine.parquet')) e
-JOIN stage.prop p ON p.id = e.target_proposition_id
--- CASE keeps this an equi-join; with AND in ON, DuckDB plans a nested loop (10 minutes here).
-LEFT JOIN condition_set cs ON cs.condition_set_id = CASE WHEN p.object_type = 'conditionSet' THEN p.object_id END;
-
 
 -- Pairs for conflict detection, both orders. The level rule is the queries' (docs/data.md):
 -- 5 when one side is P/LP and the other isn't, 3 for B/LB against VUS, 2 for different terms of

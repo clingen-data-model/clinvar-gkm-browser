@@ -30,7 +30,7 @@ export async function vocabularies(db: Database, release: string): Promise<Vocab
       release,
       `SELECT code, quality_name AS label, rank FROM submission_level ORDER BY rank DESC`,
     ),
-    db.query(release, `SELECT condition_id FROM condition WHERE placeholder ORDER BY 1`),
+    db.query(release, `SELECT id AS condition_id FROM condition WHERE placeholder ORDER BY 1`),
   ]);
   const dimensions = (r: Resource) =>
     [...r.dimensions.values()].map(({ name, label }) => ({ name, label }));

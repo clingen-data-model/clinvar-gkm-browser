@@ -19,7 +19,7 @@ render() {
   while IFS= read -r line || [[ -n $line ]]; do
     if [[ $line =~ $begin ]]; then
       printf '%s\n```mermaid\n' "$line"
-      awk -v area="${BASH_REMATCH[1]}" -f "$awk_file" "$schema"
+      awk -v area="${BASH_REMATCH[1]}" -f "$awk_file" "$schema" || return 1
       printf '```\n'
       inside=1
     elif [[ $line == '<!-- /schema-diagram -->' ]]; then
@@ -33,7 +33,7 @@ render() {
 
 status=0
 for doc in "${docs[@]}"; do
-  new="$(render "$doc")"
+  new="$(render "$doc")" || exit 1
   if [[ $new == "$(cat "$doc")" ]]; then
     continue
   elif [[ ${1:-} == --check ]]; then

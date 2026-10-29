@@ -68,7 +68,7 @@ export const DIMENSION_DEFS: readonly DimensionDef[] = [
     join: none,
     key: (_a, col) => `${col('submitter_id')}::VARCHAR`,
     labels: (p) =>
-      `SELECT submitter_id::VARCHAR AS key, name AS label FROM submitter WHERE submitter_id::VARCHAR IN (${p})`,
+      `SELECT id::VARCHAR AS key, name AS label FROM submitter WHERE id::VARCHAR IN (${p})`,
   },
   {
     name: 'gene',
@@ -80,8 +80,7 @@ export const DIMENSION_DEFS: readonly DimensionDef[] = [
       return `LEFT JOIN (SELECT variation_id, gene_id FROM variant_gene${where}) ${a} ON ${a}.variation_id = ${col('variation_id')}`;
     },
     key: (a) => `${a}.gene_id::VARCHAR`,
-    labels: (p) =>
-      `SELECT gene_id::VARCHAR AS key, symbol AS label FROM gene WHERE gene_id::VARCHAR IN (${p})`,
+    labels: (p) => `SELECT id::VARCHAR AS key, name AS label FROM gene WHERE id::VARCHAR IN (${p})`,
   },
   {
     name: 'condition',
@@ -90,7 +89,7 @@ export const DIMENSION_DEFS: readonly DimensionDef[] = [
     join: (a, _ctx, col) => `LEFT JOIN scv_condition ${a} ON ${a}.scv_id = ${col('scv_id')}`,
     key: (a) => `${a}.condition_id::VARCHAR`,
     labels: (p) =>
-      `SELECT condition_id::VARCHAR AS key, name AS label FROM condition WHERE condition_id::VARCHAR IN (${p})`,
+      `SELECT id::VARCHAR AS key, name AS label FROM condition WHERE id::VARCHAR IN (${p})`,
   },
   {
     name: 'classification_type',

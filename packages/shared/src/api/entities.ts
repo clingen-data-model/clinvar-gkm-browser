@@ -24,9 +24,8 @@ export const Xref = z.object({ system: z.string(), code: z.string(), relation: z
 
 /** A node of a VCV statement tree: root, submission level, or somatic tier. */
 export const AggregateStatement = z.object({
-  key: z.int(),
   statementId: z.string(),
-  parentKey: z.int().nullable(),
+  parentStatementId: z.string().nullable(),
   classificationType: z.string(),
   nodeKind: z.enum(['root', 'level', 'tier']),
   submissionLevel: z.string().nullable(),

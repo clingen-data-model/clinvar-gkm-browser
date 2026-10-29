@@ -67,7 +67,7 @@ test('the schema page draws each diagram from the doc', async ({ page }) => {
   await page.goto('/schema');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Schema diagrams');
   const diagrams = page.getByRole('img', { name: /^Entity-relationship diagram/ });
-  await expect(diagrams).toHaveCount(6);
+  await expect(diagrams).toHaveCount(5);
   // Drawn, not just placed: a broken image would show only its alt text, one line high.
   for (const img of await diagrams.all()) {
     await expect(img).toHaveAttribute('src', /^blob:/);

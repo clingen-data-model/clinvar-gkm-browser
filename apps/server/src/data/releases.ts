@@ -18,7 +18,7 @@ const Manifest = z
     derived_schema: z.int(),
     loaded_at: z.string(),
     // Table names become view names in SQL, so they must be plain identifiers.
-    tables: z.array(z.object({ name: z.string().regex(/^[a-z_][a-z0-9_]*$/), rows: z.int() })),
+    tables: z.array(z.object({ name: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), rows: z.int() })),
   })
   .transform(
     (m): Release => ({

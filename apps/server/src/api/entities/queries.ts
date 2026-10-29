@@ -73,7 +73,7 @@ export async function geneDetail(
 ): Promise<GeneDetail | null> {
   const rows = await db.query(
     release,
-    `SELECT gene_id AS "geneId", symbol FROM gene WHERE gene_id = $1`,
+    `SELECT id AS "geneId", name AS symbol FROM gene WHERE id = $1`,
     [geneId],
   );
   if (rows[0] === undefined) return null;
@@ -116,7 +116,7 @@ export async function submitterDetail(
 ): Promise<SubmitterDetail | null> {
   const rows = await db.query(
     release,
-    `SELECT submitter_id AS "submitterId", name FROM submitter WHERE submitter_id = $1`,
+    `SELECT id AS "submitterId", name AS name FROM submitter WHERE id = $1`,
     [submitterId],
   );
   if (rows[0] === undefined) return null;
@@ -133,11 +133,12 @@ export async function conditionDetail(
 ): Promise<ConditionDetail | null> {
   const rows = await db.query(
     release,
-    `SELECT c.condition_id AS "conditionId", c.name AS name, c.concept_type AS "conceptType",
-            c.medgen_id AS "medgenId", c.aliases AS aliases,
-            coalesce((SELECT list({'system': x.system, 'code': x.code, 'name': x.name} ORDER BY x.system, x.code)
-                      FROM condition_xref x WHERE x.condition_id = c.condition_id), []) AS xrefs
-     FROM condition c WHERE c.condition_id = $1`,
+    `SELECT c.id AS "conditionId", c.name AS name, c.conceptType AS "conceptType",
+            c.primaryCoding.code AS "medgenId", c.aliases AS aliases,
+            -- A struct list sorts by its fields in order: system, then code.
+            coalesce(list_sort([{'system': m.coding.system, 'code': m.coding.code, 'name': m.coding.name}
+                                for m in c.mappings]), []) AS xrefs
+     FROM condition c WHERE c.id = $1`,
     [conditionId],
   );
   if (rows[0] === undefined) return null;

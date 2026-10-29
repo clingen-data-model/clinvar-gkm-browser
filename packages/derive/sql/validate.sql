@@ -22,7 +22,7 @@ FROM (
     UNION ALL SELECT 'allele', (SELECT count(*) FROM allele), (SELECT count(*) FROM read_parquet(src_file('allele.parquet')))
     UNION ALL SELECT 'condition', (SELECT count(*) FROM condition), (SELECT count(*) FROM read_parquet(src_file('condition.parquet')))
     UNION ALL SELECT 'submitter', (SELECT count(*) FROM submitter), (SELECT count(*) FROM read_parquet(src_file('submitter.parquet')))
-    UNION ALL SELECT 'scv_somatic_impact', (SELECT count(*) FROM scv_somatic_impact), (SELECT count(*) FROM read_parquet(src_file('evidenceLine.parquet')))
+    UNION ALL SELECT 'conditionSet', (SELECT count(*) FROM conditionSet), (SELECT count(*) FROM read_parquet(src_file('conditionSet.parquet')))
 )
 WHERE derived <> source;
 
@@ -57,14 +57,14 @@ WHERE p.level IS DISTINCT FROM r.level OR p.same_condition <> r.same_condition;
 
 -- Every non-root statement found its parent (the CHECK only says roots have none).
 INSERT INTO validation_problem
-SELECT 'orphan statement', statement_id FROM vcv_statement WHERE node_kind <> 'root' AND parent_key IS NULL
+SELECT 'orphan statement', statement_id FROM vcv_statement WHERE node_kind <> 'root' AND parent_statement_id IS NULL
 UNION ALL
-SELECT 'orphan statement', statement_id FROM rcv_statement WHERE node_kind <> 'root' AND parent_key IS NULL;
+SELECT 'orphan statement', statement_id FROM rcv_statement WHERE node_kind <> 'root' AND parent_statement_id IS NULL;
 
 -- An SCV agrees with the aggregate statement citing it.
 INSERT INTO validation_problem
 SELECT 'scv disagrees with its vcv statement', s.scv_id::VARCHAR
-FROM scv s JOIN vcv_statement v ON v.vcv_statement_key = s.vcv_statement_key
+FROM scv s JOIN vcv_statement v ON v.statement_id = s.vcv_statement_id
 WHERE v.variation_id <> s.variation_id
    OR v.classification_type <> s.classification_type
    OR v.submission_level <> s.submission_level;

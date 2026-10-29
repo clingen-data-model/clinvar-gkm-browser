@@ -36,7 +36,7 @@ export async function search(
       `SELECT 'scv' AS kind, s.scv_id AS id,
               'SCV' || lpad(s.scv_id::VARCHAR, 9, '0') || ' (' || sub.name || ')' AS label,
               'SCV accession' AS match
-       FROM scv s LEFT JOIN submitter sub ON sub.submitter_id = s.submitter_id WHERE s.scv_id = $1`,
+       FROM scv s LEFT JOIN submitter sub ON sub.id = s.submitter_id WHERE s.scv_id = $1`,
       [Number(m[1])],
     );
     return { recognizedAs: 'SCV accession', results };
@@ -82,7 +82,7 @@ export async function search(
     const key = [m[1], m[2], m[3], m[4]].join('-').toUpperCase().replace(/^M-/, 'MT-');
     const results = await run(
       `SELECT 'variant' AS kind, v.variation_id AS id, v.name AS label, 'GRCh38 ' || a.vcf_key AS match
-       FROM allele a JOIN variant v ON v.allele_id = a.allele_id WHERE a.vcf_key = $1 LIMIT $2`,
+       FROM allele a JOIN variant v ON v.allele_id = a.id WHERE a.vcf_key = $1 LIMIT $2`,
       [key, limit],
     );
     return { recognizedAs: 'GRCh38 chrom-pos-ref-alt', results };
@@ -103,20 +103,20 @@ export async function search(
   // may run the branches in parallel), so each branch numbers its rows and the outer query sorts.
   const results = await run(
     `SELECT kind, id, label, match FROM (
-     (SELECT 1 AS grp, row_number() OVER (ORDER BY lower(symbol) = $1 DESC, length(symbol), symbol) AS pos,
-             'gene' AS kind, gene_id AS id, symbol AS label, 'gene symbol' AS match
-      FROM gene WHERE lower(symbol) >= $1 AND lower(symbol) < $1 || '￿'
+     (SELECT 1 AS grp, row_number() OVER (ORDER BY lower(name) = $1 DESC, length(name), name) AS pos,
+             'gene' AS kind, id AS id, name AS label, 'gene symbol' AS match
+      FROM gene WHERE lower(name) >= $1 AND lower(name) < $1 || '￿'
       ORDER BY pos LIMIT $2)
      UNION ALL
-     (SELECT 2, row_number() OVER (ORDER BY length(name), name), 'condition', condition_id, name,
+     (SELECT 2, row_number() OVER (ORDER BY length(name), name), 'condition', id, name,
              CASE WHEN lower(name) LIKE $1 || '%' THEN 'condition name' ELSE 'alias ' || alias END
-      FROM (SELECT condition_id, name, unnest(list_prepend(name, coalesce(aliases, []))) AS alias FROM condition)
+      FROM (SELECT id, name, unnest(list_prepend(name, coalesce(aliases, []))) AS alias FROM condition)
       WHERE lower(alias) LIKE $1 || '%'
-      QUALIFY row_number() OVER (PARTITION BY condition_id ORDER BY length(alias)) = 1
+      QUALIFY row_number() OVER (PARTITION BY id ORDER BY length(alias)) = 1
       ORDER BY length(name), name LIMIT $2)
      UNION ALL
      (SELECT 3, row_number() OVER (ORDER BY lower(name) LIKE $1 || '%' DESC, length(name), name), 'submitter',
-             submitter_id, name, 'submitter name'
+             id, name, 'submitter name'
       FROM submitter WHERE lower(name) LIKE '%' || $1 || '%'
       ORDER BY lower(name) LIKE $1 || '%' DESC, length(name), name LIMIT $2)
     ) ORDER BY grp, pos`,

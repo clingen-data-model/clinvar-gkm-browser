@@ -4,11 +4,17 @@
 -- design, the source of every column, and the load order.
 --
 -- Conventions:
---   * Upstream numeric ids become INTEGER keys named <entity>_id (variation_id 10 for 'clinvar:10').
---     GA4GH digest ids (VRS, refget) and therapy hashes stay VARCHAR, as published.
---   * Surrogate keys, where upstream has no usable id, are INTEGER columns named <entity>_key.
---   * DuckDB can't add a FOREIGN KEY after CREATE TABLE, so every constraint is declared here and
---     tables are created (and loaded) parents first.
+--   * Tables are kept in upstream's shape, with upstream's table and column names (sequenceReference,
+--     conceptType, id), unless a change measurably speeds up the app's queries (docs/schema.md#shape).
+--     Tables the derivation reshapes (variant, the statements, scv) or adds use snake_case names.
+--   * Lists stay on their row, as published, unless queries filter across rows on their contents;
+--     those are unnested into tables (variant_gene, variant_hgvs, variant_xref, scv_condition).
+--   * Keys are upstream's ids. Numeric ones become INTEGER, dropping the prefix (10 for
+--     'clinvar:10'), named id in an upstream-shaped table and <entity>_id elsewhere (variation_id).
+--     Other ids (GA4GH digests, condition sets, statements) stay VARCHAR, as published. There are no
+--     surrogate keys, so rebuilding a release gives the same keys, and releases can be compared.
+--   * REFERENCES clauses declare relationships; derive.sh checks them after the load (recording
+--     dangling values in reference_issue) rather than enforcing them.
 --   * Closed vocabularies are lookup tables seeded below, not ENUMs, so they carry labels and
 --     ordering, and a value upstream adds fails the load at its FOREIGN KEY instead of loading
 --     silently. Adding one is a schema version bump.
@@ -180,15 +186,15 @@ INSERT INTO review_status VALUES
 -- ---------------------------------------------------------------------------------------------
 -- Genome: VRS objects
 
-CREATE TABLE sequence_reference (
-    sequence_reference_id  VARCHAR PRIMARY KEY,  -- refget id, 'SQ.<digest>'
-    accession              VARCHAR NOT NULL,     -- RefSeq, e.g. NC_000017.11
-    molecule_type          VARCHAR NOT NULL      -- genomic, mRNA, RNA
+CREATE TABLE sequenceReference (
+    id             VARCHAR PRIMARY KEY,  -- refget id, 'SQ.<digest>'
+    name           VARCHAR NOT NULL,     -- RefSeq accession, e.g. NC_000017.11
+    molecule_type  VARCHAR NOT NULL      -- genomic, mRNA, RNA
 );
 
 CREATE TABLE location (
-    location_id            VARCHAR PRIMARY KEY,  -- 'ga4gh:SL.<digest>'
-    sequence_reference_id  VARCHAR NOT NULL REFERENCES sequence_reference (sequence_reference_id),
+    id                     VARCHAR PRIMARY KEY,  -- 'ga4gh:SL.<digest>'
+    sequence_reference_id  VARCHAR NOT NULL REFERENCES sequenceReference (id),
     loc_start              BIGINT,  -- interbase; NULL when the start is an uncertain range
     loc_end                BIGINT,  -- interbase; NULL when the end is an uncertain range
     loc_start_min          BIGINT,
@@ -197,10 +203,11 @@ CREATE TABLE location (
     loc_end_max            BIGINT
 );
 
+-- Upstream's allele, with its expressions and state (JSON in upstream's data column) as columns.
 CREATE TABLE allele (
-    allele_id                   VARCHAR PRIMARY KEY,  -- 'ga4gh:VA.<digest>'
-    location_id                 VARCHAR NOT NULL REFERENCES location (location_id),
-    hgvs_g                      VARCHAR,  -- e.g. NC_000016.10:g.376236G>A
+    id                          VARCHAR PRIMARY KEY,  -- 'ga4gh:VA.<digest>'
+    location_id                 VARCHAR NOT NULL REFERENCES location (id),
+    name                        VARCHAR,  -- genomic HGVS, e.g. NC_000016.10:g.376236G>A
     spdi                        VARCHAR,
     -- gnomAD-style VCF key, chrom-pos-ref-alt on GRCh38, left-aligned as in VCF. Split into
     -- columns for matching uploaded VCF records.
@@ -215,26 +222,29 @@ CREATE TABLE allele (
     state_repeat_subunit_length BIGINT
 );
 
-CREATE TABLE copy_number (
-    copy_number_id  VARCHAR PRIMARY KEY,  -- 'ga4gh:CN.<digest>' (count) or 'ga4gh:CX.<digest>' (change)
-    kind            VARCHAR NOT NULL CHECK (kind IN ('count', 'change')),
-    location_id     VARCHAR NOT NULL REFERENCES location (location_id),
-    copies          INTEGER,  -- count only
-    copy_change     VARCHAR,  -- change only: gain or loss
-    CHECK ((kind = 'count') = (copies IS NOT NULL)),
-    CHECK ((kind = 'change') = (copy_change IS NOT NULL))
+CREATE TABLE copyNumberCount (
+    id           VARCHAR PRIMARY KEY,  -- 'ga4gh:CN.<digest>'
+    location_id  VARCHAR NOT NULL REFERENCES location (id),
+    copies       BIGINT
+);
+
+CREATE TABLE copyNumberChange (
+    id           VARCHAR PRIMARY KEY,  -- 'ga4gh:CX.<digest>'
+    location_id  VARCHAR NOT NULL REFERENCES location (id),
+    copy_change  VARCHAR  -- gain or loss
 );
 
 -- ---------------------------------------------------------------------------------------------
 -- Genes and variants
 
 CREATE TABLE gene (
-    gene_id  INTEGER PRIMARY KEY,  -- NCBI Gene id
-    symbol   VARCHAR NOT NULL
+    id    INTEGER PRIMARY KEY,  -- NCBI Gene id, from 'ncbigene:<n>'
+    name  VARCHAR NOT NULL      -- the gene symbol
 );
 
--- One row per ClinVar variation (VCV). A variant is defined by at most one VRS object: an allele,
--- or a copy-number variant with its defining location. 12.9k variants have neither.
+-- One row per ClinVar variation (VCV): upstream's variation, its extensions as columns. A variant
+-- is defined by at most one VRS object (its member): an allele, or a copy-number count or change
+-- with its defining location. 12.9k variants have none.
 CREATE TABLE variant (
     variation_id                 INTEGER PRIMARY KEY,
     vcv_version                  INTEGER,  -- from the VCV statements; NULL if ClinVar has no VCV for it
@@ -246,17 +256,22 @@ CREATE TABLE variant (
     cytogenetic_location         VARCHAR,
     vrs_preprocessing_issue      VARCHAR,
     vrs_processing_exception     VARCHAR,
-    allele_id                    VARCHAR REFERENCES allele (allele_id),
-    copy_number_id               VARCHAR REFERENCES copy_number (copy_number_id),
-    defining_location_id         VARCHAR REFERENCES location (location_id),
-    CHECK (allele_id IS NULL OR copy_number_id IS NULL)
+    allele_id                    VARCHAR REFERENCES allele (id),
+    copy_number_count_id         VARCHAR REFERENCES copyNumberCount (id),
+    copy_number_change_id        VARCHAR REFERENCES copyNumberChange (id),
+    defining_location_id         VARCHAR REFERENCES location (id),
+    CHECK ((allele_id IS NOT NULL)::INTEGER + (copy_number_count_id IS NOT NULL)::INTEGER
+           + (copy_number_change_id IS NOT NULL)::INTEGER <= 1)
 );
+
+-- The lists below are unnested from variant because search and gene filters look across all
+-- variants for a value in them, which is about 5x faster over a table (docs/schema.md#shape).
 
 -- The variant's gene list (clinvarGeneList): every gene ClinVar relates it to, including genes a
 -- large CNV only overlaps. Not the per-SCV gene context (scv.gene_context_id).
 CREATE TABLE variant_gene (
     variation_id       INTEGER NOT NULL REFERENCES variant (variation_id),
-    gene_id            INTEGER NOT NULL REFERENCES gene (gene_id),
+    gene_id            INTEGER NOT NULL REFERENCES gene (id),
     relationship_type  VARCHAR NOT NULL,  -- within single gene, genes overlapped by variant, ...
     source             VARCHAR NOT NULL,  -- submitted or calculated
     PRIMARY KEY (variation_id, gene_id)
@@ -286,62 +301,33 @@ CREATE TABLE variant_xref (
 -- ---------------------------------------------------------------------------------------------
 -- Conditions and therapies
 
-CREATE TABLE condition (
-    condition_id  INTEGER PRIMARY KEY,  -- ClinVar trait id, from 'clinvar.trait:<n>'
-    name          VARCHAR NOT NULL,
-    concept_type  VARCHAR NOT NULL,     -- Disease, Phenotype, Trait, Condition
-    medgen_id     VARCHAR,              -- MedGen CUI; NULL for 10.6k traits
-    aliases       VARCHAR[],
-    -- "not provided" or "not specified": a placeholder, not a condition (docs/data.md#conflicts).
-    placeholder   BOOLEAN NOT NULL
-);
+-- Conditions: ClinVar traits. Therapies (therapy, therapyGroup) aren't loaded: only somatic
+-- clinical impact evidence lines use them, and no page shows those yet.
 
--- MONDO, OMIM, Orphanet, HPO, ... mappings of a condition.
-CREATE TABLE condition_xref (
-    condition_id  INTEGER NOT NULL REFERENCES condition (condition_id),
-    system        VARCHAR NOT NULL,
-    code          VARCHAR NOT NULL,
-    name          VARCHAR,
-    relation      VARCHAR NOT NULL
+CREATE TABLE condition (
+    id             INTEGER PRIMARY KEY,  -- ClinVar trait id, from 'clinvar.trait:<n>'
+    name           VARCHAR NOT NULL,
+    conceptType    VARCHAR NOT NULL,     -- Disease, Phenotype, Trait, Condition
+    aliases        VARCHAR[],
+    primaryCoding  STRUCT(name VARCHAR, code VARCHAR, system VARCHAR, iris VARCHAR[]),  -- MedGen; NULL for 10.6k traits
+    mappings       STRUCT(coding STRUCT(name VARCHAR, code VARCHAR, system VARCHAR, iris VARCHAR[]), relation VARCHAR)[],  -- MONDO, OMIM, Orphanet, HPO, ...
+    -- "not provided" or "not specified": a placeholder, not a condition (docs/data.md#conflicts).
+    placeholder    BOOLEAN NOT NULL
 );
 
 -- ClinVar TraitSets ('clinvar.traitset:<n>') and sets ClinVar-GKM mints for VCV aggregates
--- ('clinvar.conditionset:vcv-<md5>').
-CREATE TABLE condition_set (
-    condition_set_key    INTEGER PRIMARY KEY,
-    condition_set_id     VARCHAR NOT NULL UNIQUE,
-    traitset_id          INTEGER,  -- ClinVar TraitSet id; NULL for minted sets
-    set_type             VARCHAR,  -- Disease, Finding, TraitChoice, DrugResponse; NULL for minted sets
-    membership_operator  VARCHAR NOT NULL CHECK (membership_operator IN ('AND', 'OR'))
-);
-
--- A set's direct members: a condition, or (in minted sets only) a TraitSet, one level deep.
-CREATE TABLE condition_set_member (
-    condition_set_key  INTEGER NOT NULL REFERENCES condition_set (condition_set_key),
-    condition_id       INTEGER REFERENCES condition (condition_id),
-    member_set_key     INTEGER REFERENCES condition_set (condition_set_key),
-    CHECK ((condition_id IS NULL) <> (member_set_key IS NULL))
-);
-
-CREATE TABLE therapy (
-    therapy_id  VARCHAR PRIMARY KEY,  -- 'clinvar.therapy:<sha256>'
-    name        VARCHAR NOT NULL
-);
-
-CREATE TABLE therapy_group (
-    therapy_group_id     VARCHAR PRIMARY KEY,  -- 'clinvar.therapygroup:<sha256>'
-    membership_operator  VARCHAR NOT NULL
-);
-
-CREATE TABLE therapy_group_member (
-    therapy_group_id  VARCHAR NOT NULL REFERENCES therapy_group (therapy_group_id),
-    therapy_id        VARCHAR NOT NULL REFERENCES therapy (therapy_id),
-    PRIMARY KEY (therapy_group_id, therapy_id)
+-- ('clinvar.conditionset:vcv-<md5>'). concepts are the direct members: conditions
+-- ('clinvar.trait:<n>') or, in minted sets only, TraitSets, one level deep.
+CREATE TABLE conditionSet (
+    id                  VARCHAR PRIMARY KEY,
+    conceptSetType      VARCHAR,  -- Disease, Finding, TraitChoice, DrugResponse; NULL for minted sets
+    membershipOperator  VARCHAR NOT NULL CHECK (membershipOperator IN ('AND', 'OR')),
+    concepts            VARCHAR[] NOT NULL
 );
 
 CREATE TABLE submitter (
-    submitter_id  INTEGER PRIMARY KEY,  -- ClinVar organization id
-    name          VARCHAR NOT NULL
+    id    INTEGER PRIMARY KEY,  -- ClinVar organization id, from 'clinvar.submitter:<n>'
+    name  VARCHAR NOT NULL
 );
 
 -- ---------------------------------------------------------------------------------------------
@@ -349,19 +335,22 @@ CREATE TABLE submitter (
 --
 -- Each accession is a small tree: a root statement per classification type, citing one statement
 -- per submission level, each citing its SCVs. Somatic clinical impact adds a tier between level and
--- SCVs. parent_key points one step up; contributes says whether the node counts toward its
--- parent's call. Upstream's propositions are 1:1 with statements, so their object and predicate
--- are columns here.
+-- SCVs. parent_statement_id points one step up (upstream's evidence lines, as a column);
+-- contributes says whether the node counts toward its parent's call. Upstream's propositions are
+-- 1:1 with statements, so their object and predicate are columns here. The node's place in the
+-- tree (classification type, level, tier) is parsed from its id.
+--
+-- statement_id is the key, but isn't declared one: an index on 9-12 million strings would cost
+-- the load memory. validate.sql checks it's unique.
 
 CREATE TABLE vcv_statement (
-    vcv_statement_key    INTEGER PRIMARY KEY,
-    statement_id         VARCHAR NOT NULL,  -- e.g. VCV000051592.122-G-PATH-CP; unique (checked by validate.sql, not indexed)
+    statement_id         VARCHAR NOT NULL,  -- e.g. VCV000051592.122-G-PATH-CP
     variation_id         INTEGER NOT NULL REFERENCES variant (variation_id),
     classification_type  VARCHAR NOT NULL REFERENCES classification_type (code),
     node_kind            VARCHAR NOT NULL CHECK (node_kind IN ('root', 'level', 'tier')),
     submission_level     VARCHAR REFERENCES submission_level (code),  -- NULL on roots
     tier                 VARCHAR CHECK (tier IN ('T1', 'T2', 'T3', 'T4')),  -- somatic clinical impact tiers only
-    parent_key           INTEGER REFERENCES vcv_statement (vcv_statement_key),  -- NULL on roots
+    parent_statement_id  VARCHAR REFERENCES vcv_statement (statement_id),  -- NULL on roots
     contributes          BOOLEAN,  -- toward the parent's call; NULL on roots
     classification       VARCHAR,  -- the aggregate call, e.g. Pathogenic, Conflicting classifications of pathogenicity
     conflicting_explanation VARCHAR,  -- e.g. Pathogenic(40); Likely pathogenic(2)
@@ -369,17 +358,16 @@ CREATE TABLE vcv_statement (
     direction            VARCHAR NOT NULL,
     strength             VARCHAR,
     predicate            VARCHAR NOT NULL,
-    condition_id         INTEGER REFERENCES condition (condition_id),
-    condition_set_key    INTEGER REFERENCES condition_set (condition_set_key),
-    CHECK ((node_kind = 'root') = (parent_key IS NULL)),
+    condition_id         INTEGER REFERENCES condition (id),
+    condition_set_id     VARCHAR REFERENCES conditionSet (id),
+    CHECK ((node_kind = 'root') = (parent_statement_id IS NULL)),
     CHECK ((node_kind = 'root') = (submission_level IS NULL)),
     CHECK ((node_kind = 'tier') = (tier IS NOT NULL)),
-    CHECK (condition_id IS NULL OR condition_set_key IS NULL)
+    CHECK (condition_id IS NULL OR condition_set_id IS NULL)
 );
 
 CREATE TABLE rcv_statement (
-    rcv_statement_key    INTEGER PRIMARY KEY,
-    statement_id         VARCHAR NOT NULL,  -- e.g. RCV003486676.1-G-PATH-CP; unique (checked by validate.sql, not indexed)
+    statement_id         VARCHAR NOT NULL,  -- e.g. RCV003486676.1-G-PATH-CP
     rcv_accession        INTEGER NOT NULL,         -- 3486676 for RCV003486676
     rcv_version          INTEGER NOT NULL,
     variation_id         INTEGER NOT NULL REFERENCES variant (variation_id),
@@ -387,7 +375,7 @@ CREATE TABLE rcv_statement (
     node_kind            VARCHAR NOT NULL CHECK (node_kind IN ('root', 'level', 'tier')),
     submission_level     VARCHAR REFERENCES submission_level (code),
     tier                 VARCHAR CHECK (tier IN ('T1', 'T2', 'T3', 'T4')),
-    parent_key           INTEGER REFERENCES rcv_statement (rcv_statement_key),
+    parent_statement_id  VARCHAR REFERENCES rcv_statement (statement_id),
     contributes          BOOLEAN,
     classification       VARCHAR,
     conflicting_explanation VARCHAR,
@@ -395,25 +383,27 @@ CREATE TABLE rcv_statement (
     direction            VARCHAR NOT NULL,
     strength             VARCHAR,
     predicate            VARCHAR NOT NULL,
-    condition_id         INTEGER REFERENCES condition (condition_id),
-    condition_set_key    INTEGER REFERENCES condition_set (condition_set_key),
-    CHECK ((node_kind = 'root') = (parent_key IS NULL)),
+    condition_id         INTEGER REFERENCES condition (id),
+    condition_set_id     VARCHAR REFERENCES conditionSet (id),
+    CHECK ((node_kind = 'root') = (parent_statement_id IS NULL)),
     CHECK ((node_kind = 'root') = (submission_level IS NULL)),
     CHECK ((node_kind = 'tier') = (tier IS NOT NULL)),
-    CHECK (condition_id IS NULL OR condition_set_key IS NULL)
+    CHECK (condition_id IS NULL OR condition_set_id IS NULL)
 );
 
 -- ---------------------------------------------------------------------------------------------
 -- Submissions (SCV)
 
--- One row per SCV accession (each appears in one version per release). The proposition (1:1)
--- is folded in: variant, condition, predicate, gene context, inheritance. vcv_statement_key and
--- rcv_statement_key are the aggregate statements that cite the SCV (exactly one of each).
+-- One row per SCV accession (each appears in one version per release). Upstream's extensions,
+-- contributions and nested structs are columns, and the proposition (1:1) is folded in: variant,
+-- condition, predicate, gene context, inheritance. Each is several times faster to query this way
+-- (docs/schema.md#shape). vcv_statement_id and rcv_statement_id are the aggregate statements that
+-- cite the SCV (exactly one of each).
 CREATE TABLE scv (
     scv_id                  INTEGER PRIMARY KEY,  -- 20176 for SCV000020176
     scv_version             INTEGER NOT NULL,
     variation_id            INTEGER NOT NULL REFERENCES variant (variation_id),
-    submitter_id            INTEGER NOT NULL REFERENCES submitter (submitter_id),
+    submitter_id            INTEGER NOT NULL REFERENCES submitter (id),
     classification_type     VARCHAR NOT NULL REFERENCES classification_type (code),
     submission_level        VARCHAR NOT NULL REFERENCES submission_level (code),
     review_status           VARCHAR NOT NULL REFERENCES review_status (status),
@@ -433,72 +423,46 @@ CREATE TABLE scv (
     date_last_evaluated     DATE,
     local_key               VARCHAR,
     predicate               VARCHAR NOT NULL,
-    condition_id            INTEGER REFERENCES condition (condition_id),
-    condition_set_key       INTEGER REFERENCES condition_set (condition_set_key),
+    condition_id            INTEGER REFERENCES condition (id),
+    condition_set_id        VARCHAR REFERENCES conditionSet (id),
     -- Every condition the SCV is about, sets expanded (as scv_condition), for matching the
     -- conditions of two SCVs cheaply; and whether all of them are placeholders.
     condition_ids           INTEGER[] NOT NULL,
     condition_unspecified   BOOLEAN NOT NULL,
     mode_of_inheritance     VARCHAR,
     penetrance              VARCHAR,
-    -- REFERENCES gene (gene_id) NOT ENFORCED: upstream names genes its gene table lacks
+    -- REFERENCES gene (id) NOT ENFORCED: upstream names genes its gene table lacks
     -- (3 genes, 31 SCVs in 2026-10-18). Kept as published; listed in reference_issue.
     gene_context_id         INTEGER,
     gene_context_symbol     VARCHAR,  -- for submittedNotNormalized, the submitter's symbol(s)
     gene_context_source     VARCHAR,
     submitted_gene_symbols  VARCHAR[],
-    vcv_statement_key       INTEGER NOT NULL REFERENCES vcv_statement (vcv_statement_key),
-    rcv_statement_key       INTEGER NOT NULL REFERENCES rcv_statement (rcv_statement_key),
-    CHECK ((condition_id IS NULL) <> (condition_set_key IS NULL))
-);
-
--- Citations (reportedIn), one row per ClinVar citation.
-CREATE TABLE scv_citation (
-    scv_id         INTEGER  NOT NULL REFERENCES scv (scv_id),
-    ordinal        SMALLINT NOT NULL,
-    pmid           VARCHAR,
-    doi            VARCHAR,
-    urls           VARCHAR[],
-    name           VARCHAR,
-    document_type  VARCHAR
-);
-
--- The condition(s) as the submitter gave them, with how ClinVar-GKM matched each to a trait.
-CREATE TABLE scv_submitted_condition (
-    scv_id                 INTEGER  NOT NULL REFERENCES scv (scv_id),
-    ordinal                SMALLINT NOT NULL,
-    name                   VARCHAR,
-    concept_type           VARCHAR,
-    medgen_id              VARCHAR,
-    condition_id           INTEGER REFERENCES condition (condition_id),  -- the matched trait, if any
-    normalized_resolution  VARCHAR,
-    mapping_type           VARCHAR,
-    mapping_ref            VARCHAR,
-    mapping_value          VARCHAR
+    vcv_statement_id        VARCHAR NOT NULL REFERENCES vcv_statement (statement_id),
+    rcv_statement_id        VARCHAR NOT NULL REFERENCES rcv_statement (statement_id),
+    -- Lists and structs read only for one SCV's page stay as published.
+    reported_in             STRUCT(type VARCHAR, pmid VARCHAR, doi VARCHAR, urls VARCHAR[], name VARCHAR, documentType VARCHAR,
+                                   extensions STRUCT(name VARCHAR, value_string VARCHAR, value_boolean BOOLEAN)[])[],  -- citations
+    -- The condition(s) as the submitter gave them, with how ClinVar-GKM matched each to a trait
+    -- (normalized_match): one condition, or a set of them.
+    submitted_condition     STRUCT(conditionSet VARCHAR, condition VARCHAR, id VARCHAR, name VARCHAR, type VARCHAR, medgen_id VARCHAR,
+                                   xrefs STRUCT(code VARCHAR, system VARCHAR)[], original_medgen_match STRUCT(id VARCHAR, name VARCHAR),
+                                   direct_match VARCHAR, normalized_match VARCHAR, normalized_resolution VARCHAR,
+                                   mapping STRUCT(type VARCHAR, ref VARCHAR, value VARCHAR)),
+    submitted_condition_set STRUCT(conditionSet VARCHAR, condition VARCHAR, multiple_condition_explanation VARCHAR,
+                                   concepts STRUCT(id VARCHAR, name VARCHAR, type VARCHAR, medgen_id VARCHAR,
+                                                   xrefs STRUCT(code VARCHAR, system VARCHAR)[], original_medgen_match STRUCT(id VARCHAR, name VARCHAR),
+                                                   direct_match VARCHAR, normalized_match VARCHAR, normalized_resolution VARCHAR,
+                                                   mapping STRUCT(type VARCHAR, ref VARCHAR, value VARCHAR))[]),
+    CHECK ((condition_id IS NULL) <> (condition_set_id IS NULL))
 );
 
 -- Every condition an SCV is about, with condition sets expanded (nested TraitSets included).
 -- The table for condition pivots and same-condition conflict checks.
 CREATE TABLE scv_condition (
-    scv_id                 INTEGER NOT NULL REFERENCES scv (scv_id),
-    condition_id           INTEGER NOT NULL REFERENCES condition (condition_id),
-    via_condition_set_key  INTEGER REFERENCES condition_set (condition_set_key),  -- NULL when direct
+    scv_id                INTEGER NOT NULL REFERENCES scv (scv_id),
+    condition_id          INTEGER NOT NULL REFERENCES condition (id),
+    via_condition_set_id  VARCHAR REFERENCES conditionSet (id),  -- NULL when direct
     PRIMARY KEY (scv_id, condition_id)
-);
-
--- Somatic clinical impact SCVs: the specific impact (diagnostic, prognostic, therapeutic
--- response) and its AMP/ASCO/CAP tier. Upstream's evidenceLine plus its target proposition.
-CREATE TABLE scv_somatic_impact (
-    scv_id                  INTEGER PRIMARY KEY REFERENCES scv (scv_id),
-    impact_type             VARCHAR NOT NULL REFERENCES classification_type (code),  -- DIAG, PROG, TR
-    evidence_outcome        VARCHAR,  -- Level A/B (Tier I), Level C/D (Tier II)
-    direction               VARCHAR,
-    predicate               VARCHAR,
-    condition_id            INTEGER REFERENCES condition (condition_id),
-    condition_set_key       INTEGER REFERENCES condition_set (condition_set_key),
-    therapy_id              VARCHAR REFERENCES therapy (therapy_id),
-    therapy_group_id        VARCHAR REFERENCES therapy_group (therapy_group_id),
-    condition_qualifier_id  INTEGER REFERENCES condition (condition_id)  -- tumor type, therapeutic response only
 );
 
 -- Every ordered pair of SCVs whose classifications conflict detection compares (docs/data.md,
