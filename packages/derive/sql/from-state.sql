@@ -22,6 +22,11 @@ CREATE OR REPLACE TEMP MACRO bare_list(j) AS [bare(x) FOR x IN coalesce(CAST(j A
 -- An extension value as upstream's value_string: the value when it's a JSON string.
 CREATE OR REPLACE TEMP MACRO ext_value_string(e) AS
     CASE WHEN json_type(e->'value') = 'VARCHAR' THEN e->>'value' END;
+-- Macros with a parameter inside a struct literal or a list comprehension don't bind (DuckDB 1.5),
+-- so the nested shapes below are from_json schemas, and a comprehension nested in another one
+-- spells its expressions out.
+CREATE OR REPLACE TEMP MACRO coding(c) AS
+    from_json(c, '{"name": "VARCHAR", "code": "VARCHAR", "system": "VARCHAR", "iris": ["VARCHAR"]}');
 
 -- Genome ----------------------------------------------------------------------------------------
 
@@ -101,9 +106,9 @@ COPY (
 -- condition keeps upstream's camelCase column names (condition.sql).
 COPY (
     SELECT key AS id, j->>'name' AS name, j->>'conceptType' AS conceptType,
-           from_json(j->'primaryCoding', '{"name": "VARCHAR", "code": "VARCHAR", "system": "VARCHAR"}') AS primaryCoding,
+           coding(j->'primaryCoding') AS primaryCoding,
            coalesce(CAST(j->'aliases' AS VARCHAR[]), []) AS aliases,
-           coalesce(from_json(j->'mappings', '[{"coding": {"name": "VARCHAR", "code": "VARCHAR", "system": "VARCHAR"}, "relation": "VARCHAR"}]'), []) AS mappings
+           [{coding: coding(m->'coding'), relation: m->>'relation'} FOR m IN json_list(j->'mappings')] AS mappings
     FROM (SELECT key, rec::JSON AS j FROM read_parquet('{state}/condition.parquet'))
 ) TO '{out}/condition.parquet' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 20000);
 
@@ -185,10 +190,20 @@ COPY (
 -- Submissions ------------------------------------------------------------------------------------
 
 -- Upstream's typed submitted condition (scv.sql); the set form holds a list of the same concepts.
-CREATE OR REPLACE TEMP MACRO submitted_condition(v) AS from_json(v,
-    '{"id": "VARCHAR", "name": "VARCHAR", "type": "VARCHAR", "medgen_id": "VARCHAR",
+-- A concept without xrefs has [] upstream, as every absent list does.
+CREATE OR REPLACE TEMP MACRO submitted_condition(v) AS from_json(json_merge_patch('{"xrefs": []}', v),
+    '{"conditionSet": "VARCHAR", "condition": "VARCHAR", "id": "VARCHAR", "name": "VARCHAR", "type": "VARCHAR",
+      "medgen_id": "VARCHAR", "xrefs": [{"code": "VARCHAR", "system": "VARCHAR"}],
+      "original_medgen_match": {"id": "VARCHAR", "name": "VARCHAR"}, "direct_match": "VARCHAR",
       "normalized_match": "VARCHAR", "normalized_resolution": "VARCHAR",
       "mapping": {"type": "VARCHAR", "ref": "VARCHAR", "value": "VARCHAR"}}');
+CREATE OR REPLACE TEMP MACRO submitted_condition_set(v) AS from_json(v,
+    '{"conditionSet": "VARCHAR", "condition": "VARCHAR", "multiple_condition_explanation": "VARCHAR",
+      "concepts": [{"id": "VARCHAR", "name": "VARCHAR", "type": "VARCHAR", "medgen_id": "VARCHAR",
+                    "xrefs": [{"code": "VARCHAR", "system": "VARCHAR"}],
+                    "original_medgen_match": {"id": "VARCHAR", "name": "VARCHAR"}, "direct_match": "VARCHAR",
+                    "normalized_match": "VARCHAR", "normalized_resolution": "VARCHAR",
+                    "mapping": {"type": "VARCHAR", "ref": "VARCHAR", "value": "VARCHAR"}}]}');
 
 COPY (
     SELECT key AS id,
@@ -200,7 +215,9 @@ COPY (
                value_string: ext_value_string(e),
                value_submitted_condition: CASE WHEN e->>'name' = 'submittedCondition' THEN submitted_condition(e->'value') END,
                value_submitted_condition_set: CASE WHEN e->>'name' = 'submittedConditionSet' THEN
-                   {concepts: [submitted_condition(c) FOR c IN json_list(e->'$.value.concepts')]} END
+                   struct_update(submitted_condition_set(e->'value'),
+                       concepts := [struct_update(c, xrefs := coalesce(c.xrefs, []))
+                                    FOR c IN coalesce(submitted_condition_set(e->'value').concepts, [])]) END
            } FOR e IN json_list(j->'extensions')] AS extensions,
            CASE WHEN (j->'classification') IS NOT NULL THEN {name: j->>'$.classification.name',
                primaryCoding: CASE WHEN (j->'$.classification.primaryCoding') IS NOT NULL THEN {code: j->>'$.classification.primaryCoding.code'} END} END AS classification,
@@ -208,8 +225,12 @@ COPY (
            CASE WHEN (j->'strength') IS NOT NULL THEN {name: j->>'$.strength.name'} END AS strength,
            CASE WHEN (j->'specifiedBy') IS NOT NULL THEN {methodType: j->>'$.specifiedBy.methodType', name: j->>'$.specifiedBy.name'} END AS specifiedBy,
            j->>'description' AS description,
-           [{pmid: r.pmid, doi: r.doi, urls: coalesce(r.urls, []), name: r.name, documentType: r.documentType}
-            FOR r IN coalesce(from_json(j->'reportedIn',
-                '[{"pmid": "VARCHAR", "doi": "VARCHAR", "urls": ["VARCHAR"], "name": "VARCHAR", "documentType": "VARCHAR"}]'), [])] AS reportedIn
+           [{type: r->>'type', pmid: r->>'pmid', doi: r->>'doi', urls: coalesce(CAST(r->'urls' AS VARCHAR[]), []),
+             name: r->>'name', documentType: r->>'documentType',
+             extensions: [{name: x->>'name',
+                           value_string: CASE WHEN json_type(x->'value') = 'VARCHAR' THEN x->>'value' END,
+                           value_boolean: CASE WHEN json_type(x->'value') = 'BOOLEAN' THEN CAST(x->>'value' AS BOOLEAN) END}
+                          FOR x IN json_list(r->'extensions')]}
+            FOR r IN json_list(j->'reportedIn')] AS reportedIn
     FROM (SELECT key, rec::JSON AS j FROM read_parquet('{state}/scv.parquet'))
 ) TO '{out}/scv.parquet' (FORMAT parquet, COMPRESSION zstd, ROW_GROUP_SIZE 20000);

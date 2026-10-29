@@ -100,6 +100,13 @@ For a release R, rows only change in these ways:
 
 **Removals as events:** a closed row that no row continues (`NOT EXISTS` a row with the same key and `valid_from` = its `valid_to`).
 
+**Prior art:** ClinGen's clinvar-ingest-bq-tools keeps the same kind of table in BigQuery (`scripts/temporal-data-collection/`, e.g. `clinvar_ingest.clinvar_scvs`, read 29 October 2026). Each row has `start_release_date`, `end_release_date` and `deleted_release_date`, and "as of" is `release_date BETWEEN start_release_date AND end_release_date`. It differs from this design in three ways:
+- **Its end date is the last release a row was seen in,** so every unchanged row is updated each release to extend it. An open `valid_to` touches only the rows that changed.
+- **A deletion is a third date** rather than a closed row with no successor.
+- **Only some columns start a new row.** For SCVs: the version, statement type, rank, proposition type, the two clinical-impact columns, date last evaluated, significance, RCV accession and trait set. A change to the others (submitter name, PMIDs, review status, comment) overwrites the current row, so their history is lost. This design keeps every change (open question 1).
+
+Its SCV rows carry the RCV accession without its version, as `scv.rcv_accession` will here.
+
 **Viewing VCV version N** (as of `:r`, a release inside N's interval; by default the release N first appeared in) is a lookup on the statement's evidence lines and the SCVs as of `:r`.
 
 ### Rows that change when their record didn't
@@ -171,21 +178,25 @@ It writes only the columns `load.sql` reads.
 - **columns:** all 22 converted tables equal the published typed columns, every row. About 11 minutes, mostly `variation`;
 - **derived:** the converted release, derived, equals `data/derived/1/2026-10-18` in all 30 tables compared (all but `release` and `source_file`, which describe the input files). About a minute.
 
-That check predates the 29 October schema change ([schema.md](schema.md#shape)). `load.sql` now reads columns the converter doesn't write yet:
+**Re-checked 29 October 2026 after the schema change** ([schema.md](schema.md#shape)), which made `load.sql` read more columns. The converter now also writes:
 - `iris` on a condition's codings;
 - a citation's `type` and `extensions`;
 - a submitted condition's `conditionSet`, `condition`, `xrefs`, `original_medgen_match` and `direct_match`;
 - a submitted condition set's `conditionSet`, `condition` and `multiple_condition_explanation`.
 
-These need adding and the check re-running.
+All 22 converted tables equal the published columns, and all 23 derived tables compared equal `data/derived/1/2026-10-18`.
 
-Costs on the development Mac, 26 October:
+Costs on the development Mac, 29 October:
 
 | Step | Time | Peak memory | Output |
 | --- | --- | --- | --- |
-| State from parquet | 32 s | | 3.8 GB |
-| Convert | 3.6 min | 4.6 GB resident | 3.1 GB |
-| Derive | 2.7 min | as before | 2.0 GB |
+| State from parquet | 33 s | | 3.8 GB |
+| Convert | 3.7 min | 4.6 GB resident (26 October) | 3.1 GB |
+| Check columns | 15 min | | |
+| Derive | 2.7 min | as before | 1.9 GB |
+| Check derived | 67 s | | |
+
+**Reading a bundle** (`scripts/state-from-bundle.sh`): the assembler writes one record per line inside one block per section, so a strict line-by-line pass splits a bundle into a state, and fails on any line that doesn't fit. With `--delta` it also writes the manifest's deleted keys (`deleted.parquet`, section and key). It checks each section's record count against the manifest's added plus updated, except `conditionSet`: the manifest counts every changed set, but the bundle leaves out single-member sets (61 records against 66 in the 2026-10-24 delta). The 2026-10-24 delta (6.7 MB) reads in 6 s and converts in 3 s.
 
 Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out of DuckDB's 4 GB limit at first. Both steps now use 3 threads, 20,000-row groups and a spill directory.
 
