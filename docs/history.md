@@ -203,8 +203,8 @@ Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out
 ## Steps
 
 1. This doc. Revised 29 October.
-2. **The converter:** checked against all of 2026-10-18 (done). Next, the columns above, and a reader for bundles and deltas, one record per line.
-3. **Schema:** drop `scv.vcv_statement_id` and `scv.rcv_statement_id`, add `scv.rcv_accession`, and move the two queries that use them to the column join.
+2. **The converter:** the columns above, and a reader for bundles and deltas, one record per line. Done, re-checked against all of 2026-10-18 on 29 October.
+3. **Schema:** drop `scv.vcv_statement_id` and `scv.rcv_statement_id`, add `scv.tier` and `scv.rcv_accession`, and move the two queries that use them to the column join. Done 29 October; `validate.sql` checks the join against the evidence lines every load.
 4. **The log, derived history and applying a release,** tested on the fixture with a hand-made delta.
 5. **Backfill** from the 2026-07 monthly, with the development checks, measuring time and growth per release.
 6. **API:** the as-of filter in the compiler and the one-off queries; a variant's versions and removals.

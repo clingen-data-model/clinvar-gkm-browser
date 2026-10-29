@@ -113,8 +113,14 @@ export async function scvDetail(
            {'geneId': s.gene_context_id, 'symbol': s.gene_context_symbol, 'source': s.gene_context_source}
          END AS "geneContext",
          s.submitted_gene_symbols AS "submittedGeneSymbols",
-         s.vcv_statement_id AS "vcvStatementId",
-         s.rcv_statement_id AS "rcvStatementId",
+         -- The VCV and RCV nodes citing the SCV: those with its classification type, level and tier.
+         (SELECT v.statement_id FROM vcv_statement v
+          WHERE v.variation_id = s.variation_id AND v.classification_type = s.classification_type
+            AND v.submission_level = s.submission_level AND v.tier IS NOT DISTINCT FROM s.tier) AS "vcvStatementId",
+         (SELECT r.statement_id FROM rcv_statement r
+          WHERE r.variation_id = s.variation_id AND r.rcv_accession = s.rcv_accession
+            AND r.classification_type = s.classification_type
+            AND r.submission_level = s.submission_level AND r.tier IS NOT DISTINCT FROM s.tier) AS "rcvStatementId",
          list_concat(
            CASE WHEN s.submitted_condition IS NULL THEN [] ELSE [${submittedConditionSql('s.submitted_condition')}] END,
            coalesce([${submittedConditionSql('c')} for c in s.submitted_condition_set.concepts], [])

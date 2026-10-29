@@ -397,8 +397,10 @@ CREATE TABLE rcv_statement (
 -- One row per SCV accession (each appears in one version per release). Upstream's extensions,
 -- contributions and nested structs are columns, and the proposition (1:1) is folded in: variant,
 -- condition, predicate, gene context, inheritance. Each is several times faster to query this way
--- (docs/schema.md#shape). vcv_statement_id and rcv_statement_id are the aggregate statements that
--- cite the SCV (exactly one of each).
+-- (docs/schema.md#shape). The aggregate statements citing the SCV (exactly one VCV and one RCV
+-- node) are found by its columns: the node with its variation_id, classification_type,
+-- submission_level and tier, within rcv_accession for the RCV. Their IDs aren't stored: they carry
+-- the VCV's or RCV's version, which every other SCV of the variant bumps (docs/history.md).
 CREATE TABLE scv (
     scv_id                  INTEGER PRIMARY KEY,  -- 20176 for SCV000020176
     scv_version             INTEGER NOT NULL,
@@ -412,6 +414,7 @@ CREATE TABLE scv (
     -- The matched classification_term (on classification_type and lower(classification_code));
     -- NULL when unmapped, which is recorded in reference_issue.
     term                    VARCHAR,
+    tier                    VARCHAR CHECK (tier IN ('T1', 'T2', 'T3', 'T4')),  -- somatic clinical impact: the citing node's tier
     submitted_classification VARCHAR, -- the submitter's own term, where it differs
     direction               VARCHAR NOT NULL,  -- supports, disputes, neutral
     strength                VARCHAR,           -- Definitive, Likely, Strong, Potential
@@ -437,8 +440,7 @@ CREATE TABLE scv (
     gene_context_symbol     VARCHAR,  -- for submittedNotNormalized, the submitter's symbol(s)
     gene_context_source     VARCHAR,
     submitted_gene_symbols  VARCHAR[],
-    vcv_statement_id        VARCHAR NOT NULL REFERENCES vcv_statement (statement_id),
-    rcv_statement_id        VARCHAR NOT NULL REFERENCES rcv_statement (statement_id),
+    rcv_accession           INTEGER NOT NULL,  -- the citing RCV, unversioned: 119949 for RCV000119949
     -- Lists and structs read only for one SCV's page stay as published.
     reported_in             STRUCT(type VARCHAR, pmid VARCHAR, doi VARCHAR, urls VARCHAR[], name VARCHAR, documentType VARCHAR,
                                    extensions STRUCT(name VARCHAR, value_string VARCHAR, value_boolean BOOLEAN)[])[],  -- citations

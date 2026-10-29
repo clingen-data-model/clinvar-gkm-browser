@@ -31,15 +31,15 @@ CREATE TABLE variant AS SELECT * FROM src_variant WHERE variation_id IN (FROM pi
 CREATE TABLE scv AS SELECT * FROM src_scv WHERE variation_id IN (FROM pick) ORDER BY variation_id, scv_id;
 CREATE TABLE variant_gene AS SELECT * FROM src_variant_gene WHERE variation_id IN (FROM pick) ORDER BY ALL;
 CREATE TABLE variant_hgvs AS SELECT * FROM src_variant_hgvs WHERE variation_id IN (FROM pick) ORDER BY variation_id, ordinal;
-CREATE TABLE variant_xref AS SELECT * FROM src_variant_xref WHERE variation_id IN (FROM pick) ORDER BY variation_id;
+CREATE TABLE variant_xref AS SELECT * FROM src_variant_xref WHERE variation_id IN (FROM pick) ORDER BY ALL;
 CREATE TABLE vcv_statement AS SELECT * FROM src_vcv_statement WHERE variation_id IN (FROM pick) ORDER BY variation_id, statement_id;
 CREATE TABLE rcv_statement AS SELECT * FROM src_rcv_statement WHERE variation_id IN (FROM pick) ORDER BY variation_id, statement_id;
-CREATE TABLE allele AS SELECT * FROM src_allele WHERE id IN (SELECT allele_id FROM variant);
-CREATE TABLE copyNumberCount AS SELECT * FROM src_copyNumberCount WHERE id IN (SELECT copy_number_count_id FROM variant);
-CREATE TABLE copyNumberChange AS SELECT * FROM src_copyNumberChange WHERE id IN (SELECT copy_number_change_id FROM variant);
+CREATE TABLE allele AS SELECT * FROM src_allele WHERE id IN (SELECT allele_id FROM variant) ORDER BY id;
+CREATE TABLE copyNumberCount AS SELECT * FROM src_copyNumberCount WHERE id IN (SELECT copy_number_count_id FROM variant) ORDER BY id;
+CREATE TABLE copyNumberChange AS SELECT * FROM src_copyNumberChange WHERE id IN (SELECT copy_number_change_id FROM variant) ORDER BY id;
 CREATE TABLE location AS SELECT * FROM src_location WHERE id IN (
   SELECT location_id FROM allele UNION SELECT location_id FROM copyNumberCount
-  UNION SELECT location_id FROM copyNumberChange UNION SELECT defining_location_id FROM variant);
+  UNION SELECT location_id FROM copyNumberChange UNION SELECT defining_location_id FROM variant) ORDER BY id;
 CREATE TABLE sequenceReference AS FROM src_sequenceReference;
 CREATE TABLE scv_condition AS SELECT * FROM src_scv_condition WHERE scv_id IN (SELECT scv_id FROM scv) ORDER BY scv_id, condition_id;
 CREATE TABLE scv_classification_pair AS SELECT * FROM src_scv_classification_pair WHERE variation_id IN (FROM pick)

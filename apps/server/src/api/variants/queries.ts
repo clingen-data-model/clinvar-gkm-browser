@@ -77,10 +77,12 @@ export async function variantDetail(
               coalesce(n.scvs, 0)::INTEGER AS "scvCount"
        FROM vcv_statement vs
        LEFT JOIN review_status rs ON rs.status = vs.review_status
-       -- The variant's SCVs per statement, counted once rather than per statement row.
-       LEFT JOIN (SELECT vcv_statement_id, count(*) AS scvs FROM scv
-                  WHERE variation_id = $1 GROUP BY vcv_statement_id) n
-         ON n.vcv_statement_id = vs.statement_id
+       -- The variant's SCVs per level (or somatic tier) node, counted once rather than per node.
+       -- An SCV's node is the one with its classification type, level and tier; roots match none.
+       LEFT JOIN (SELECT classification_type, submission_level, tier, count(*) AS scvs FROM scv
+                  WHERE variation_id = $1 GROUP BY ALL) n
+         ON n.classification_type = vs.classification_type AND n.submission_level = vs.submission_level
+        AND n.tier IS NOT DISTINCT FROM vs.tier
        LEFT JOIN classification_type t ON t.code = vs.classification_type
        LEFT JOIN submission_level sl ON sl.code = vs.submission_level
        WHERE vs.variation_id = $1

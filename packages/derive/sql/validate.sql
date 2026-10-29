@@ -61,13 +61,30 @@ SELECT 'orphan statement', statement_id FROM vcv_statement WHERE node_kind <> 'r
 UNION ALL
 SELECT 'orphan statement', statement_id FROM rcv_statement WHERE node_kind <> 'root' AND parent_statement_id IS NULL;
 
--- An SCV agrees with the aggregate statement citing it.
+-- The VCV and RCV nodes found by an SCV's columns are exactly the ones citing it in the evidence
+-- lines: the app finds them by that join (scv's comment in schema.sql).
 INSERT INTO validation_problem
-SELECT 'scv disagrees with its vcv statement', s.scv_id::VARCHAR
-FROM scv s JOIN vcv_statement v ON v.statement_id = s.vcv_statement_id
-WHERE v.variation_id <> s.variation_id
-   OR v.classification_type <> s.classification_type
-   OR v.submission_level <> s.submission_level;
+WITH citing AS (
+    SELECT CAST(regexp_extract(cited, 'SCV(\d+)\.', 1) AS INTEGER) AS scv_id, statement_id
+    FROM (SELECT regexp_extract(id, '^(.*)\.(contributing|non-contributing)$', 1) AS statement_id,
+                 unnest(evidence_items) AS cited
+          FROM read_parquet([src_file('vcv_evidenceLine.parquet'), src_file('rcv_evidenceLine.parquet')]))
+    WHERE cited LIKE 'clinvar.submission:%'
+), found AS (
+    SELECT s.scv_id, v.statement_id
+    FROM scv s JOIN vcv_statement v
+      ON v.variation_id = s.variation_id AND v.classification_type = s.classification_type
+     AND v.submission_level = s.submission_level AND v.tier IS NOT DISTINCT FROM s.tier
+    UNION ALL
+    SELECT s.scv_id, r.statement_id
+    FROM scv s JOIN rcv_statement r
+      ON r.variation_id = s.variation_id AND r.rcv_accession = s.rcv_accession
+     AND r.classification_type = s.classification_type
+     AND r.submission_level = s.submission_level AND r.tier IS NOT DISTINCT FROM s.tier
+)
+SELECT 'scv statement join disagrees with the evidence lines', coalesce(c.scv_id, f.scv_id)::VARCHAR
+FROM citing c FULL JOIN found f ON f.scv_id = c.scv_id AND f.statement_id = c.statement_id
+WHERE c.scv_id IS NULL OR f.scv_id IS NULL;
 
 -- Every SCV has at least one condition after set expansion.
 INSERT INTO validation_problem
