@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a release's state (docs/history.md#building-it) from a published parquet set: one file per
+# Build a release's state (docs/history.md#the-converter) from a published parquet set: one file per
 # bundle section, rows (key, rec), where rec is the record's JSON, from the parquet's `data` column
 # (`value` for therapies). The parquet's three evidence-line tables are the bundle's one
 # evidenceLine section. Used to check the converter against the published typed columns, and as

@@ -1,18 +1,28 @@
 # ClinVar GKM browser: history
 
-Status: draft, 26 October 2026, on the `history` branch. How the app stores ClinVar's past releases and shows a record as it was. [data.md](data.md#history) has the earlier outline; this doc replaces its model.
+Status: draft, 29 October 2026, on the `history` branch (first written 26 October; the model was revised on 29 October). How the app stores ClinVar's past releases and shows a record as it was. [data.md](data.md#history) has the earlier outline; this doc replaces its model.
 
 ## What the source has
 
-- **ClinVar-GKM's JSON covers 17 ClinVar releases,** 2026-06-27 to 2026-10-18 (as of 26 October 2026):
-  - a monthly full bundle (about 4.6 GB gzipped) for 2026-06-27;
-  - a weekly delta (2–75 MB) for each release after it.
+As of 29 October 2026, ClinVar-GKM covers 18 ClinVar releases, 2026-06-27 to 2026-10-24, all in its current 1.1 format. Upstream rewrote every past release when it moved from 1.0 (its ADR 0006), so the frozen `v1/1.0` files aren't needed.
 
-  Every file is in the current 1.1 format: upstream rewrote all past releases when it moved from 1.0 (its ADR 0006). The frozen `v1/1.0` files aren't needed.
-- **Parquet exists for the latest release only,** rebuilt and overwritten weekly.
-- **A delta holds the full objects that were added or changed,** in the same sections as the full bundle, each keyed by ID. Its manifest counts the added and updated records per section and lists the deleted IDs. A deleted record is listed by ID only, without its content. So a delta can be applied forwards, but not undone.
+- **Monthly full bundles** (JSON, about 4.6 GB gzipped), each built from one weekly release:
+
+  | Monthly | Built from |
+  | --- | --- |
+  | 2026-07 | 2026-06-27 |
+  | 2026-08 | 2026-08-04 |
+  | 2026-09 | 2026-08-29 |
+  | 2026-10 | 2026-09-28 |
+
+- **Weekly full bundles** for the current month only.
+- **A weekly delta** (JSON) for every release after 2026-06-27: 17 so far, 1–152 MB each, 415 MB in all. A delta holds the full records that were added or changed, in the same sections as a full bundle, each keyed by ID. Its manifest counts the added and updated records per section, lists the deleted keys, and names the release it applies to (`baseline_release`). A deleted record is listed by key only, so a delta can be applied forwards but not undone.
+- **One parquet set,** for the latest release only (13.2 GB), overwritten every week. There are no parquet deltas, and none in the archives. Upstream decided this deliberately: parquet is "derived from the bundle; may be regenerated" (its ADR 0008 (e), amended by ADR 0009, 20–21 October 2026). Its planned tool, clingen-data-model/clinvar-gkm-parquet, will rebuild parquet for any past week from a monthly plus deltas. The tool was at v0 and unreleased as of 23 October.
+- **One record per line.** Upstream's assembler writes each record of a bundle or delta on its own line, so a 4.6 GB bundle can be read line by line. Upstream calls this an implementation detail, not a guarantee (the tool's design plan, D4).
 - **Statement IDs carry their version** (`VCV000000745.22-G-PATH`, `clinvar.submission:SCV000024273.152`). A new version appears in a delta as the new ID added and the old one deleted.
 - **Nothing before 2026-06-27** is in ClinVar-GKM. Earlier history needs another source ([data.md](data.md#history)).
+
+**We convert the JSON deltas ourselves** (decided 29 October 2026), with the converter below, rather than wait for upstream to publish parquet deltas or release its tool. If the tool ships and matches the published parquet, it could replace our converter.
 
 ## How ClinVar versions records
 
@@ -29,73 +39,127 @@ Each VCV version lists exactly which SCV versions it cites, in its evidence line
 
 ## Model
 
-**History tables sit beside the per-release tables; they don't replace them.** Current pages, the stored pairs and the API keep reading the latest derived release, unchanged. History tables live in their own directory and grow by one set of changes per release. Current rows appear in both, at about 400 MB for `scv`.
+Two stores, each holding every release once:
+- **Upstream's records** as a log of changes: what each release added, changed and deleted.
+- **Our derived tables** with history built in: the current rows, plus the rows later releases replaced, each marked with the releases it held.
 
-**Intervals of releases.** A history row is one state of a record and the releases it held:
-- `valid_from` is the first release with that state (inclusive);
+The app reads the derived tables. The log is what they're built from, and what rebuilds them after a schema change.
+
+A full copy per release is ruled out: a year of weekly releases would be 52 copies of about 2 GB.
+
+### Upstream's records: a log
+
+One table per bundle section, in the parquet shape `load.sql` reads (the converter's output), plus two columns:
+- `release`: the release the row came from;
+- `deleted`: true for a deletion marker, which has only the key.
+
+The rows come from:
+- **The base:** every record of the starting release, from a full JSON bundle or a parquet set.
+- **One batch per delta:** the delta's added and updated records, and a marker for each deleted key.
+
+Rows are only ever appended. The state as of release `:r` is each key's newest row up to `:r`, unless that row is a deletion:
+
+```sql
+SELECT * FROM scv_log
+WHERE release <= :r
+QUALIFY row_number() OVER (PARTITION BY id ORDER BY release DESC) = 1
+  AND NOT deleted
+```
+
+- **A record no later release touched** has no newer row, so its row from the base (or an earlier batch) is still its state.
+- **A deleted record** has a marker as its newest row from that release on, so it drops out. Earlier releases still see it.
+- **A record that comes back** gets a newer row in the batch it returns in.
+- **A new version of a statement** is a new key, and the old key's deletion. So "the latest version as of `:r`" needs no special handling.
+- **One record's changes** are its rows, filtered by key.
+
+The converted base is about 3 GB (3.1 GB for 2026-10-18), and each batch adds roughly the size of its delta.
+
+### Derived tables with history
+
+Every derived table the app reads gains `valid_from` and `valid_to`:
+- `valid_from` is the first release with that row (inclusive);
 - `valid_to` is the first release without it (exclusive; NULL while current).
 
-A record's state as of release `:r` is the row where `valid_from <= :r AND (valid_to IS NULL OR valid_to > :r)`. `:r` is always a release in `history_release`; a date between releases snaps to the latest release on or before it.
+The key of a history row is the table's natural key plus `valid_from`, e.g. `(scv_id, valid_from)`.
 
-**Rows are only ever added or closed, never deleted or edited otherwise.** For a change in release R:
+- **Current state:** `valid_to IS NULL`. Today's pages read only these rows.
+- **As of release `:r`:** `valid_from <= :r AND (valid_to IS NULL OR valid_to > :r)`. `:r` is always a release in `history_release`; a date between releases snaps to the latest release on or before it.
+
+That is a plain filter, with no grouping or window function per query. Most queries get it in one place, the shared compiler (`resources.ts`, `summary.ts`); the one-off queries in each `queries.ts` need it individually.
+
+For a release R, rows only change in these ways:
 
 | Change | Rows |
 | --- | --- |
-| New version (`.2` deleted, `.3` added) | close the `.2` row (`valid_to = R`); add a `.3` row (`valid_from = R`) |
-| Content change, same version | close the old state; add the new one |
-| Removed | close the row; add nothing |
-| Comes back later | add a row from the release it returns in; the key `(id, valid_from)` allows gaps |
+| Changed content (same key) | close the old row (`valid_to = R`); add the new one (`valid_from = R`) |
+| New key (including a new statement version) | add a row from R |
+| Gone | close the row; add nothing |
+| Comes back later | add a row from the release it returns in; the key `(…, valid_from)` allows gaps |
 
-**Tables (first pass):**
+`history_release` lists every release applied: date, ordinal, source (base bundle, base parquet or delta) and the delta's checksum.
 
-| Table | One row per | Notes |
-| --- | --- | --- |
-| `history_release` | release processed | date, ordinal, source (monthly full, delta, parquet), and whether the release before it was missing |
-| `scv_history` | SCV state | `scv_state_key`, then the `scv` columns, `valid_from`, `valid_to` |
-| `scv_condition_history`, `scv_citation_history`, `scv_submitted_condition_history` | child row of an SCV state | keyed by `scv_state_key`; they inherit the state's interval, so a child-only change is a new SCV state |
-| `vcv_statement_history` | VCV statement version | the `vcv_statement` columns, `valid_from`, `valid_to`. A statement ID is one version, so a row closes only when the next version or a removal replaces it |
-| `vcv_version_scv` | SCV version cited by a VCV version | `variation_id`, `vcv_version`, `scv_id`, `scv_version`, submission level, contributes. Written once, never closed |
-| `submitter_history`, `condition_history`, `gene_history` | lookup state | past pages show the names and mappings of their release, falling back to the last known one |
+**Removals as events:** a closed row that no row continues (`NOT EXISTS` a row with the same key and `valid_from` = its `valid_to`).
 
-Left for later: RCV statements, variant descriptions (HGVS lists, gene lists, cross-references change weekly with no version: 55k variation records in the 2026-10-18 delta), and history for the pairs table. A past variant has few enough SCVs to compare on the fly.
+**Viewing VCV version N** (as of `:r`, a release inside N's interval; by default the release N first appeared in) is a lookup on the statement's evidence lines and the SCVs as of `:r`.
 
-**Viewing VCV version N** (as of `:r`, a release inside N's interval; by default the release N first appeared in):
+### Rows that change when their record didn't
 
-```sql
-SELECT s.*
-FROM vcv_version_scv c
-JOIN scv_history s
-  ON s.scv_id = c.scv_id AND s.scv_version = c.scv_version
- AND s.valid_from <= :r AND (s.valid_to IS NULL OR s.valid_to > :r)
-WHERE c.variation_id = :v AND c.vcv_version = :n;
-```
+A derived row should change only when something it shows changed. Otherwise history fills with copies of unchanged rows.
 
-**Removals as events:** a closed row that no row continues (`NOT EXISTS` a row for the same ID with `valid_from` = its `valid_to`).
+- **The SCV's links to its VCV and RCV statements are dropped from `scv`** (decided 29 October 2026). `scv.vcv_statement_id` carried the VCV's version (`VCV000000010.141-G-PATH-CP`), and ClinVar bumps that version whenever any SCV under it changes. So one lab's update would give every other SCV on the variant a new row. Upstream doesn't link an SCV to its statement at all: the VCV's evidence lines cite the SCV, and `load.sql` reversed that link. The statement is instead found by the columns the SCV already has:
+  - VCV: `variation_id`, `classification_type` and `submission_level`, plus the tier for somatic clinical impact (`'T' || n` from `classification_code` 'tier n');
+  - RCV: `scv.rcv_accession` (unversioned, as in `rcv_statement.rcv_accession`), with the same three.
 
-## Building it
+  On 2026-10-18 this join reproduces both stored links for all 6,853,781 SCVs, with no SCV matching two statements.
+- **`variant.vcv_version`** changes with every VCV bump. It's the variant's own record changing, at one row per variant, so it stays.
+- **`scv_classification_pair`** has a row for every pair of SCVs on a variant, so a changed SCV changes all its pairs. That's intrinsic. The backfill will measure how much it grows.
 
-**One step per release:** compare the newly derived release with the previous one, by key and by a hash of each row's columns:
-- a key in both with a different hash: close the old row and add the new state;
-- a new key: add it;
-- a key that's gone: close its row.
+## Applying a release
 
-The comparison is on derived tables, not on the delta's lists, because a derived row can change when its own upstream record didn't (an `scv_condition` row when its condition set changes).
+Each delta is applied to the derived tables directly, re-deriving only what it touches:
 
-**Going forward:** each weekly Parquet release is derived as now, then compared with the previous one. If a release is missed, the closing release is the first one where the change was seen, and `history_release` marks the gap.
+1. **Check the chain** (the delta's `baseline_release` is the last release applied) and the bundle's sha256. Refuse a gap.
+2. **Convert and append** the delta's records and deletion markers to the log.
+3. **Lookup tables** (`gene`, `submitter`, `condition`, `conditionSet`, `allele`, `location`, `sequenceReference`, the copy-number tables) keep upstream's shape, so their changed rows apply as they are.
+4. **Collect the affected variants:**
+   - variations changed or deleted;
+   - the subjects of changed propositions;
+   - the variants of changed or deleted SCV, VCV and RCV statements and evidence lines;
+   - the variants of SCVs whose condition set changed.
 
-**Backfill, 2026-06-27 to the latest release:**
-1. Start from the 2026-06-27 monthly bundle.
-2. For each delta in order:
-   - apply it to the previous source state: replace records by ID, drop the deleted IDs;
-   - convert the state to the Parquet shape `load.sql` reads;
-   - derive it;
-   - compare it with the previous derived release.
-3. Keep only the two most recent states at any time (about 15–20 GB at peak).
-4. Refuse to continue past a gap in the deltas.
+   Deleted records are resolved against the previous state.
+5. **Re-derive those variants:** run `load.sql` over the log's state as of R, limited to the affected variants. That includes their unchanged records.
+6. **Compare** the result with those variants' current rows, by key and by a hash of each row's columns, and close and add rows as in the table above.
 
-About 17 derivations of 3 minutes each, once. Applying a delta to the derived tables directly would mean tracing every dependency; re-deriving the whole release can't miss one.
+Nearly every derived table is grouped by variant (`variant`, `variant_*`, `scv`, `scv_condition`, the statements, the pairs), which is what makes step 5 possible. The 2026-10-24 delta touches on the order of 10,000 of about 4 million variants.
 
-**The converter** (`packages/derive/sql/from-state.sql`, run by `scripts/convert-state.sh`) turns a release's **state** into upstream's parquet shape, so `load.sql` runs on it unchanged. A state is one file per bundle section, rows `(key, rec)`, with `rec` the record's JSON as in the bundle. The converter follows upstream's own export (clinvar-gkm `src/scripts/parquet-schemas/`):
+**The risk is step 4's list.** A dependency missed there leaves stale rows. The development checks below compare every applied release with a full derivation, which is how a missed dependency shows up.
+
+**Releases from now on** can be applied from the week's delta, or derived from the week's parquet set and compared in full. Either way the log gains the release's changes.
+
+**After a schema change,** the derived history is rebuilt from the log: derive the base, then apply each release in turn.
+
+## Backfill
+
+Start from the 2026-07 monthly (built from 2026-06-27) and apply the 17 deltas after it, through 2026-10-24 (decided 29 October 2026). Four months of weekly changes show how time and storage scale; starting from our 2026-10-18 parquet would give one delta.
+
+That's a 4.6 GB download plus 415 MB of deltas. Ask before downloading and running it.
+
+Upstream's known-issues page reports an allele mismatch between 2026-08-22 and 2026-08-29 in 1.0.1, fixed in 1.1.0. Its own delta-reconstruction check finds no difference on every section for all 16 consecutive pairs.
+
+## Checks during development
+
+These verify the approach. They aren't part of the product: a user's install only applies deltas.
+
+- **Upstream's records:** when the replayed state reaches a release we have in full, it should equal that release. We have 2026-10-18 (our parquet copy) and 2026-10-24 (the current parquet set). The October weekly fulls and the later monthlies are further checkpoints if needed.
+- **Derived tables:** after each release is applied, the current rows should equal a full derivation of the same state.
+- **One known gap:** a condition set that shrinks to one member. Upstream drops single-member sets from its export, so the set is neither in the delta nor in its deleted keys. The replayed state keeps the old row. Expected to be rare; the first check will show whether it happens.
+
+## The converter
+
+`packages/derive/sql/from-state.sql`, run by `scripts/convert-state.sh`, turns a release's **state** into upstream's parquet shape, so `load.sql` runs on it unchanged. A state is one file per bundle section, rows `(key, rec)`, with `rec` the record's JSON as in the bundle. A delta's records are a state too, just a small one.
+
+The converter follows upstream's own export (clinvar-gkm `src/scripts/parquet-schemas/`):
 - `#/<section>/` pointers become bare ids;
 - extension values are split into `value_<type>` fields by extension name;
 - absent lists are `[]` and absent objects NULL, as in BigQuery's output;
@@ -107,7 +171,15 @@ It writes only the columns `load.sql` reads.
 - **columns:** all 22 converted tables equal the published typed columns, every row. About 11 minutes, mostly `variation`;
 - **derived:** the converted release, derived, equals `data/derived/1/2026-10-18` in all 30 tables compared (all but `release` and `source_file`, which describe the input files). About a minute.
 
-Costs on the development Mac:
+That check predates the 29 October schema change ([schema.md](schema.md#shape)). `load.sql` now reads columns the converter doesn't write yet:
+- `iris` on a condition's codings;
+- a citation's `type` and `extensions`;
+- a submitted condition's `conditionSet`, `condition`, `xrefs`, `original_medgen_match` and `direct_match`;
+- a submitted condition set's `conditionSet`, `condition` and `multiple_condition_explanation`.
+
+These need adding and the check re-running.
+
+Costs on the development Mac, 26 October:
 
 | Step | Time | Peak memory | Output |
 | --- | --- | --- | --- |
@@ -119,15 +191,18 @@ Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out
 
 ## Steps
 
-1. This doc. Done.
-2. **The converter,** checked against all of 2026-10-18. Done.
-3. **History tables and the compare step,** tested on the fixture with a hand-made second release.
-4. **Backfill** from 2026-06-27: a streaming reader for bundles and deltas, then each week in turn. Ask before downloading the 4.6 GB bundle and running it.
-5. **API:** a variant's versions and removals; any read with `as_of`.
-6. **Web:** a history selector on the variant page that renders a past version with its SCVs as they stood.
+1. This doc. Revised 29 October.
+2. **The converter:** checked against all of 2026-10-18 (done). Next, the columns above, and a reader for bundles and deltas, one record per line.
+3. **Schema:** drop `scv.vcv_statement_id` and `scv.rcv_statement_id`, add `scv.rcv_accession`, and move the two queries that use them to the column join.
+4. **The log, derived history and applying a release,** tested on the fixture with a hand-made delta.
+5. **Backfill** from the 2026-07 monthly, with the development checks, measuring time and growth per release.
+6. **API:** the as-of filter in the compiler and the one-off queries; a variant's versions and removals.
+7. **Web:** a history view on the variant page that renders a past version with its SCVs as they stood.
 
 ## Open questions
 
-1. Which SCV columns count as a change. Every column (the hash) is simplest and catches the MedGen re-mappings. Too noisy for a timeline? The timeline could show only version changes and classification changes, while the rows keep everything.
-2. Where history lives for a local install: shared, built once and downloaded, or each install building its own?
-3. Earlier history from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).
+1. **Which columns count as a change.** Every column (the hash) is simplest, and catches the MedGen re-mappings. The rows keep every change; a timeline could show only version and classification changes.
+2. **How derived history is laid out on disk.** Closing a row rewrites its file. Either one file per table with both current and closed rows, or current rows and closed rows in separate files, so current-state queries read exactly what they read today. To measure in the backfill.
+3. **What "as of a date" covers in the app.** First a record's history (step 7). The whole app at a past date (search, gene pages, conflicts) is the same filter on every query, so it stays possible.
+4. **Where history lives for a local install:** shipped built, or built by each install from the log.
+5. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).

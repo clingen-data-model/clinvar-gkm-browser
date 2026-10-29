@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Check the JSON converter (packages/derive/sql/from-state.sql) against a published parquet set,
-# whose `data` columns hold the same records as the bundle (docs/history.md#building-it):
+# whose `data` columns hold the same records as the bundle (docs/history.md#the-converter):
 #   columns: each converted table equals the published table's same columns, for the same keys
 #            (all of 2026-10-18: about 11 minutes, mostly variation);
 #   derived: the converted set, derived, equals the release derived from the published parquet,

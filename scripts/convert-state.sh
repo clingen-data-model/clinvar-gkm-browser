@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Convert a release's state (from state-from-parquet.sh, or the bundle and its deltas) into the
 # parquet tables load.sql reads, with a manifest.json that scripts/derive.sh accepts
-# (docs/history.md#building-it).
+# (docs/history.md#the-converter).
 #
 # Usage: scripts/convert-state.sh <state dir> <source dir to write>
 set -euo pipefail

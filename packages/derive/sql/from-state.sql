@@ -1,5 +1,5 @@
 -- ClinVar GKM browser: convert a release's records from ClinVar-GKM's JSON form into the parquet
--- tables load.sql reads (docs/history.md#building-it).
+-- tables load.sql reads (docs/history.md#the-converter).
 --
 -- Input, {state}/<section>.parquet: one file per bundle section, rows (key, rec) where rec is the
 -- record's JSON exactly as in the bundle (and in the published parquet's `data` column). The
