@@ -187,7 +187,7 @@ export class Database {
           await connection.run(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
           await connection.run(`CREATE SCHEMA ${schema}`);
           for (const { name, key } of tables) {
-            const on = key.map((k) => `c.${k} = a.${k}`).join(' AND ');
+            const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
             await connection.run(
               `CREATE VIEW ${schema}.${name} AS
                SELECT a.* EXCLUDE (release) FROM ${files(dir, 'added', name)} a
@@ -241,7 +241,7 @@ export class Database {
       await connection.run('DROP SCHEMA IF EXISTS history CASCADE');
       await connection.run('CREATE SCHEMA history');
       for (const { name, key } of tables) {
-        const on = key.map((k) => `c.${k} = a.${k}`).join(' AND ');
+        const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
         await connection.run(
           `CREATE VIEW history.${name} AS
            SELECT a.* EXCLUDE (release), a.release AS valid_from, c.release AS valid_to

@@ -35,7 +35,7 @@ const NEXT_CHANGES: Partial<Record<string, { where: string; replace: string; clo
 const TABLES: Record<string, string[]> = {
   variant: ['variation_id'],
   variant_gene: ['variation_id', 'gene_id'],
-  variant_hgvs: ['variation_id', 'ordinal'],
+  variant_hgvs: ['variation_id', 'expression', 'protein_expression'],
   variant_xref: ['variation_id', 'system', 'code'],
   vcv_statement: ['statement_id'],
   rcv_statement: ['statement_id'],

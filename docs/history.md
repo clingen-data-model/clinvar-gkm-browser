@@ -79,13 +79,13 @@ Every row carries its own validity, so a filter on any column reads the version 
 
 `data/history/<schema version>/`: the tables grouped by variant (`variant`, `variant_gene`, `variant_hgvs`, `variant_xref`, `vcv_statement`, `rcv_statement`, `scv`, `scv_condition`, `scv_classification_pair`), and the lookups (`gene`, `submitter`, `condition`, `conditionSet`, `allele`, `location`, `sequenceReference`, the copy-number tables).
 
-A closed row is named by its table's natural key and `valid_from`. Each key is unique among the rows holding at any one release (checked on 2026-10-18):
+A closed row is named by its table's natural key and `valid_from`. Each key is unique among the rows holding at any one release, and `history.sh` stops if a derivation breaks that (`check_keys`). Keys compare NULLs as equal (`IS NOT DISTINCT FROM`), since `protein_expression` is NULL in 57% of HGVS rows:
 
 | Table | Natural key |
 | --- | --- |
 | `variant` | `variation_id` |
 | `variant_gene` | `variation_id`, `gene_id` |
-| `variant_hgvs` | `variation_id`, `ordinal` |
+| `variant_hgvs` | `variation_id`, `expression`, `protein_expression` ([below](#hgvs-rows)) |
 | `variant_xref` | `variation_id`, `system`, `code` |
 | `vcv_statement`, `rcv_statement` | `statement_id` |
 | `scv` | `scv_id` |
@@ -208,12 +208,12 @@ Upstream's known-issues page reports an allele mismatch between 2026-08-22 and 2
 
 The first run stopped at 2026-09-28, out of memory converting its affected variants' records (see "Large records convert in batches" below). It resumed from the log, with the monthly not read again.
 
-**Growth over the 17 weeks:** 9.9% more rows across the derived tables, about 0.6% a week. The derived history went from 1.9 to 2.0 GB, and the log is 4.4 GB.
+**Growth over the 17 weeks:** 9.5% more rows across the derived tables, about 0.55% a week (9.9% before HGVS rows were keyed by content). The derived history went from 1.9 to 2.0 GB, and the log is 4.4 GB.
 
 | Table | Base rows | Added | Closed | Growth |
 | --- | --- | --- | --- | --- |
 | `scv_classification_pair` | 12,948,490 | 3,650,084 | 1,317,368 | 28.2% |
-| `variant_hgvs` | 41,733,510 | 2,387,916 | 674,243 | 5.7% |
+| `variant_hgvs` | 41,733,510 | 1,836,276 | 122,603 | 4.4% |
 | `vcv_statement` | 8,841,570 | 1,561,269 | 1,235,964 | 17.7% |
 | `rcv_statement` | 11,298,814 | 1,455,339 | 696,398 | 12.9% |
 | `variant` | 4,531,457 | 831,463 | 670,703 | 18.3% |
@@ -221,7 +221,7 @@ The first run stopped at 2026-09-28, out of memory converting its affected varia
 | `scv_condition` | 6,848,453 | 503,817 | 14,633 | 7.4% |
 | `conditionSet` | 81,431 | 31,610 | 12,297 | 38.8% |
 
-82% of the closed `variant_hgvs` rows (551,640 of 674,243) were position shifts only: the same content was added back at another ordinal in the same release (open question 2).
+`variant_hgvs` is as rebuilt with rows keyed by content ([HGVS rows](#hgvs-rows)). Keyed by position, as first built, it added 2,387,916 rows and closed 674,243, of which 551,640 were the same content moved to another position.
 
 **Checks after the backfill:**
 - **Derived:** as of 2026-10-24, the derived history equals a full derivation of the log's state in all 18 tables.
@@ -325,9 +325,18 @@ Decided 29 October 2026:
 - **A date between releases** in `release` means the latest release on or before it; the response's `release` says which (decided 29 October 2026).
 - **A local install** starts from a history shipped in the image (releases A to B) and can check for and apply upstream's deltas after B (`history.sh apply`, as the backfill does). If the history downloads quickly enough, it can be fetched at startup instead of shipped.
 
+## HGVS rows
+
+Decided 30 October 2026: `variant_hgvs` rows are named by `(variation_id, expression, protein_expression)`, and the table no longer stores each row's position in upstream's list.
+
+Upstream keeps the list sorted by expression, then protein expression (none of the 43.4M rows of 2026-10-18 is out of order), so the position is a rank, not information, and the app orders by expression. Keyed by position, one expression added to a list closed and re-added every row after it. Over the backfill's 17 weeks, measured under the position key:
+- **No change was a reorder alone.** Every variant whose HGVS rows changed had an expression added or removed, a transcript version replaced, or an expression's molecular consequences or protein expression changed. Upstream never sent a variation record whose only difference was the order of a list.
+- **Most closings were moves:** 551,640 of the 674,243 closed rows were the same content re-added at another position. Keyed by content, 122,603 rows close and 1,836,276 are added instead of 2,387,916. One release added two expressions to a 371-entry list and closed all 371 rows.
+- **The key is unique** in each of the 18 releases, and `expression` is never NULL.
+
 ## Open questions
 
 1. **Which columns count as a change.** Every column (the hash) is simplest, and catches the MedGen re-mappings. The rows keep every change; a timeline could show only version and classification changes.
-2. **HGVS ordinals.** Most of `variant_hgvs`'s churn is expressions shifting position after an insertion: 82% of its closed rows over the backfill's 17 weeks. Comparing these rows by content, and keeping today's order for past views, would cut that. To decide from the backfill's growth.
+2. **What a "variant changed in release R" signal counts.** HGVS content alone changed 68,388 variant-release events over the backfill, 7.4% of all and up to 81% in a quiet week, without ever moving the VCV version; upstream also added a cytogenetic location to 142,496 variants. About 37,000 of the HGVS-only events are expressions upstream adds and removes in alternate weeks. A timeline could show classification and submission changes (SCV and statement rows, the VCV version) apart from annotation-only ones (HGVS, cytogenetic location, gene list, name), and collapse the reverts.
 3. **Shipping the history in the image or downloading it at startup,** to decide from its size after the backfill.
 4. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).

@@ -277,10 +277,12 @@ CREATE TABLE variant_gene (
     PRIMARY KEY (variation_id, gene_id)
 );
 
--- The variant's HGVS list (clinvarHgvsList), one row per expression.
+-- The variant's HGVS list (clinvarHgvsList), one row per expression. Upstream sorts the list by
+-- expression, then protein expression, so that order is its order. A row is named by
+-- (variation_id, expression, protein_expression), not its position: one expression added would
+-- otherwise move every row after it (docs/history.md#hgvs-rows).
 CREATE TABLE variant_hgvs (
     variation_id            INTEGER  NOT NULL REFERENCES variant (variation_id),
-    ordinal                 SMALLINT NOT NULL,  -- position in ClinVar's list, from 1
     syntax                  VARCHAR,            -- hgvs.c, hgvs.g, hgvs.n, hgvs.m, hgvs.r
     expression              VARCHAR,
     nucleotide_type         VARCHAR,            -- coding, genomic, genomic top-level, non-coding

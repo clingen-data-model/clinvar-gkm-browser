@@ -83,7 +83,7 @@ nat_key() {
   case $1 in
     variant) echo variation_id ;;
     variant_gene) echo variation_id, gene_id ;;
-    variant_hgvs) echo variation_id, ordinal ;;
+    variant_hgvs) echo variation_id, expression, protein_expression ;;
     variant_xref) echo variation_id, system, code ;;
     vcv_statement | rcv_statement) echo statement_id ;;
     scv) echo scv_id ;;
@@ -95,7 +95,7 @@ nat_key() {
 # A derived table's rows as of a release, with valid_from.
 der_as_of() {  # <table> <release> [condition]
   local on k
-  on=$(for k in $(nat_key "$1" | tr -d ,); do printf 'c.%s = a.%s AND ' "$k" "$k"; done)
+  on=$(for k in $(nat_key "$1" | tr -d ,); do printf 'c.%s IS NOT DISTINCT FROM a.%s AND ' "$k" "$k"; done)
   echo "SELECT a.* EXCLUDE (release), a.release AS valid_from FROM read_parquet($(glob "$DER" added "$1"), hive_partitioning = true) a
         ANTI JOIN read_parquet($(glob "$DER" closed "$1"), hive_partitioning = true) c
           ON ${on}c.valid_from = a.release AND c.release <= DATE '$2'
@@ -201,6 +201,18 @@ derive_state() {  # <state> <out> <work>
   "$SCRIPTS/convert-state.sh" "$1" "$3/converted" >/dev/null
   derive_into "$3/converted" "$2" "$3/derive"
   rm -rf "$3/converted"
+  check_keys "$2"
+}
+
+# A closing names its row by the table's natural key, so the key must be unique in a release
+# (NULLs equal, as the anti-joins compare them). Upstream's data could break that for the keys
+# drawn from its lists (variant_hgvs, variant_xref); stop rather than close the wrong rows.
+check_keys() {  # <derived dir>
+  local t dup
+  for t in $VARIANT_TABLES $LOOKUP_TABLES; do
+    dup=$(duckdb -noheader -list -c "SELECT count(*) - count(DISTINCT ($(nat_key "$t"))) FROM read_parquet('$1/$t.parquet')")
+    [[ $dup == 0 ]] || die "$t: $dup rows share a natural key ($(nat_key "$t")) with another"
+  done
 }
 
 # ---- the log ------------------------------------------------------------------------------------

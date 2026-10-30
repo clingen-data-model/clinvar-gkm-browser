@@ -30,7 +30,7 @@ UNION SELECT unnest([13961, 1299388, 13652, 372511, 12356, 12579]);    -- somati
 CREATE TABLE variant AS SELECT * FROM src_variant WHERE variation_id IN (FROM pick) ORDER BY variation_id;
 CREATE TABLE scv AS SELECT * FROM src_scv WHERE variation_id IN (FROM pick) ORDER BY variation_id, scv_id;
 CREATE TABLE variant_gene AS SELECT * FROM src_variant_gene WHERE variation_id IN (FROM pick) ORDER BY ALL;
-CREATE TABLE variant_hgvs AS SELECT * FROM src_variant_hgvs WHERE variation_id IN (FROM pick) ORDER BY variation_id, ordinal;
+CREATE TABLE variant_hgvs AS SELECT * FROM src_variant_hgvs WHERE variation_id IN (FROM pick) ORDER BY variation_id, expression, protein_expression;
 CREATE TABLE variant_xref AS SELECT * FROM src_variant_xref WHERE variation_id IN (FROM pick) ORDER BY ALL;
 CREATE TABLE vcv_statement AS SELECT * FROM src_vcv_statement WHERE variation_id IN (FROM pick) ORDER BY variation_id, statement_id;
 CREATE TABLE rcv_statement AS SELECT * FROM src_rcv_statement WHERE variation_id IN (FROM pick) ORDER BY variation_id, statement_id;

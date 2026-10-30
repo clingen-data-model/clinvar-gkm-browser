@@ -111,14 +111,14 @@ FROM (SELECT variation_id, unnest(list_filter(extensions, lambda x: x.name = 'cl
 ORDER BY 1, 2;
 
 INSERT INTO variant_hgvs
-SELECT variation_id, ordinal,
+SELECT variation_id,
        h.nucleotideExpression.syntax, h.nucleotideExpression.value, h.nucleotideType,
        h.proteinExpression.value, coalesce(h.maneSelect, false), coalesce(h.manePlus, false),
        [mc.name for mc in h.molecularConsequence]
-FROM (SELECT variation_id, unnest(hs) AS h, unnest(range(1, len(hs) + 1)) AS ordinal
+FROM (SELECT variation_id, unnest(hs) AS h
       FROM (SELECT variation_id, list_filter(extensions, lambda x: x.name = 'clinvarHgvsList')[1].value_hgvs_array AS hs
             FROM stage.variation))
-ORDER BY variation_id, ordinal;
+ORDER BY variation_id, h.nucleotideExpression.value, h.proteinExpression.value;
 
 INSERT INTO variant_xref
 SELECT variation_id, m.coding.system, m.coding.code, m.relation

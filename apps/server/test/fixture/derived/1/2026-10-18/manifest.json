@@ -4,7 +4,7 @@
   "gkm_schema_version": "1.1.0",
   "gkm_dataset": "clinvar_2026_10_18_v2_6_0",
   "derived_schema": 1,
-  "loaded_at": "2026-10-29 17:15:36.871446",
+  "loaded_at": "2026-10-30 17:39:21.612608",
   "tables": [
     { "name": "allele", "rows": 350 },
     { "name": "classification_term", "rows": 35 },

@@ -59,7 +59,7 @@ export async function variantDetail(
               protein_expression AS "proteinExpression", mane_select AS "maneSelect",
               mane_plus AS "manePlus", molecular_consequences AS "molecularConsequences"
        FROM variant_hgvs WHERE variation_id = $1
-       ORDER BY mane_select DESC, mane_plus DESC, ordinal`,
+       ORDER BY mane_select DESC, mane_plus DESC, expression, protein_expression`,
       [variationId],
     ),
     db.query(
