@@ -43,9 +43,6 @@ record_settings() {  # <spill dir>
   echo "SET memory_limit = '${DUCKDB_MEMORY_LIMIT:-4GB}'; SET threads = ${STATE_THREADS:-3};
         SET temp_directory = '$1'; SET preserve_insertion_order = false;"
 }
-# Past this share of the variants, re-derive the whole release rather than trace (e.g. a change to
-# the "not provided" condition, which 1.9M SCVs name).
-FULL_FRACTION="${HISTORY_FULL_FRACTION:-0.1}"
 
 # The 1.1.0 bundle sections.
 SECTIONS="sequenceReference location allele copyNumberCount copyNumberChange gene variation condition
@@ -280,8 +277,8 @@ der_init() {  # <release>
   rm -rf "$work"
 }
 
-# Apply one log release to the derived history: re-derive the variants its changes reach (or the
-# whole release, past FULL_FRACTION of the variants), and close and add rows.
+# Apply one log release to the derived history: re-derive the variants its changes reach, however
+# many, and close and add rows.
 der_apply() {  # <release>
   local release=$1 previous work t0=$SECONDS
   previous="$(latest "$DER")"
@@ -335,19 +332,13 @@ UNION SELECT s.variation_id FROM ($(der_as_of scv "$previous")) s
       SEMI JOIN ($(der_as_of scv_condition "$previous" "a.condition_id IN (SELECT id_int(key) FROM ck WHERE section = 'condition')")) c
         ON c.scv_id = s.scv_id;
 DELETE FROM affected WHERE variation_id IS NULL;
-CREATE TABLE variant_count AS SELECT count(*) AS n FROM ($(der_as_of variant "$previous"));
 SQL
-  local affected total full=0
-  affected="$(duckdb -noheader -list "$db" -c "SELECT count(*) FROM affected")"
-  total="$(duckdb -noheader -list "$db" -c "SELECT n FROM variant_count")"
-  if [[ $(echo "$affected > $total * $FULL_FRACTION" | bc) == 1 ]]; then full=1; fi
-  echo "  $((SECONDS - t0))s  $affected of $total variants affected$([[ $full == 1 ]] && echo "; re-deriving the whole release")"
+  echo "  $((SECONDS - t0))s  $(duckdb -noheader -list "$db" -c "SELECT count(*) FROM affected") variants affected"
 
   echo "  $((SECONDS - t0))s  writing their records as of $release"
   # The affected variants' records, each matched on the version that holds at the release; the small
   # lookups the load joins to, whole; the genome records the release changed.
   subset_cond() {
-    [[ $full == 1 ]] && return 0
     case $1 in
       variation) echo "id_int(r.key) IN (SELECT variation_id FROM affected)" ;;
       proposition*) echo "id_int(r.subject) IN (SELECT variation_id FROM affected)" ;;
@@ -357,13 +348,11 @@ SQL
       *) echo "r.key IN (SELECT key FROM ck WHERE section = '$1')" ;;
     esac
   }
-  if [[ $full == 0 ]]; then
-    {
-      echo "$DUCKDB_SETTINGS CREATE OR REPLACE TEMP MACRO id_int(id) AS CAST(split_part(id, ':', 2) AS INTEGER);"
-      echo "CREATE OR REPLACE TABLE sub_prop AS $(for s in $PROP_SECTIONS; do echo "UNION ALL SELECT key FROM ($(log_as_of "$s" "$release" "$(subset_cond "$s")"))"; done | sed '1s/^UNION ALL //');"
-      echo "CREATE OR REPLACE TABLE sub_stmt AS $(for s in scv vcv rcv; do echo "UNION ALL SELECT key FROM ($(log_as_of "$s" "$release" "$(subset_cond "$s")"))"; done | sed '1s/^UNION ALL //');"
-    } | duckdb "$db" >/dev/null
-  fi
+  {
+    echo "$DUCKDB_SETTINGS CREATE OR REPLACE TEMP MACRO id_int(id) AS CAST(split_part(id, ':', 2) AS INTEGER);"
+    echo "CREATE OR REPLACE TABLE sub_prop AS $(for s in $PROP_SECTIONS; do echo "UNION ALL SELECT key FROM ($(log_as_of "$s" "$release" "$(subset_cond "$s")"))"; done | sed '1s/^UNION ALL //');"
+    echo "CREATE OR REPLACE TABLE sub_stmt AS $(for s in scv vcv rcv; do echo "UNION ALL SELECT key FROM ($(log_as_of "$s" "$release" "$(subset_cond "$s")"))"; done | sed '1s/^UNION ALL //');"
+  } | duckdb "$db" >/dev/null
   write_state "$release" "$work/state" "$db" subset_cond
 
   echo "  $((SECONDS - t0))s  deriving them"
@@ -378,16 +367,14 @@ SQL
           UNION SELECT scv_id FROM read_parquet('$work/new/scv.parquet');"
     echo "CREATE TEMP TABLE changes (tbl VARCHAR, closed BIGINT, added BIGINT);"
     for t in $VARIANT_TABLES $LOOKUP_TABLES; do
-      local filter=""
-      if [[ $full == 0 ]]; then
-        case $t in
-          scv_condition) filter="scv_id IN (SELECT scv_id FROM affected_scv)" ;;
-          gene | submitter | condition) filter="id IN (SELECT id_int(key) FROM ck WHERE section = '$t')" ;;
-          sequenceReference | location | allele | copyNumberCount | copyNumberChange | conditionSet)
-            filter="id IN (SELECT key FROM ck WHERE section = '$t')" ;;
-          *) filter="variation_id IN (SELECT variation_id FROM affected)" ;;
-        esac
-      fi
+      local filter
+      case $t in
+        scv_condition) filter="scv_id IN (SELECT scv_id FROM affected_scv)" ;;
+        gene | submitter | condition) filter="id IN (SELECT id_int(key) FROM ck WHERE section = '$t')" ;;
+        sequenceReference | location | allele | copyNumberCount | copyNumberChange | conditionSet)
+          filter="id IN (SELECT key FROM ck WHERE section = '$t')" ;;
+        *) filter="variation_id IN (SELECT variation_id FROM affected)" ;;
+      esac
       mkdir -p "$work/stage/added/$t/release=$release" "$work/stage/closed/$t/release=$release"
       echo "CREATE OR REPLACE TEMP TABLE cur AS
               SELECT $(nat_key "$t"), valid_from, hash(*COLUMNS(* EXCLUDE (valid_from))) AS rh

@@ -147,7 +147,7 @@ The derived history reads each release's changes from the log, so `apply` and `r
    - SCVs using a condition set whose expansion changed: a changed set, or any set naming it, at any depth;
    - SCVs naming a changed condition, directly or through a set (`scv_condition` holds the expansion). Any change to the condition counts, rather than repeating `load.sql`'s placeholder rule. Extra variants cost little, since their rows hash equal and stay open.
 
-   Past `HISTORY_FULL_FRACTION` of the variants (default 10%), the release is re-derived in full instead. A change to "not provided", which 1.9M SCVs name, takes that path.
+   There is one path however many variants a release touches. The worst case is a change to the "not provided" condition, which 1.9M SCVs name. Measured with a synthetic delta that changed only that condition, on the full 2026-10-18 history: 1,514,869 variants affected, and the apply took 210 s. That breaks down as 40 s gathering their records, 2.6 min deriving them and 11 s comparing, which is faster than a full re-derive (about 6.5 min). An earlier version switched to a full re-derive past 10% of the variants; it was dropped as a second path for no measured gain.
 4. **Re-derive them:** their records as of R (unchanged ones included), the small lookups the load joins to (`condition`, `conditionSet`, `submitter`, `gene`) whole, and the release's genome records. These are converted, and `load.sql` and `validate.sql` run on them unchanged.
 5. **Compare** with the current rows, by a hash of every column computed during the apply. Then write the added rows and the closings:
    - tables grouped by variant: the affected variants' rows;
@@ -207,7 +207,7 @@ These verify the approach. They aren't part of the product: a user's install onl
   - an SCV removed with its evidence-line citations;
   - a VCV version bump.
 
-  After each delta, the history must equal a full derivation, traced and re-derived in full. The test also resumes an interrupted run and rebuilds from the log. With the set tracing removed, it fails at the nested-set delta.
+  After each delta, the history must equal a full derivation. The test also resumes an interrupted run and rebuilds from the log. With the set tracing removed, it fails at the nested-set delta.
 - **One known gap:** a condition set that shrinks to one member. Upstream drops single-member sets from its export, so the set is neither in the delta nor in its deleted keys. The replayed state keeps the old row. Expected to be rare; the first check will show whether it happens.
 
 ## The converter
@@ -253,17 +253,24 @@ Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out
 1. This doc. Revised 29 October.
 2. **The converter:** the columns above, and a reader for bundles and deltas, one record per line. Done, re-checked against all of 2026-10-18 on 29 October.
 3. **Schema:** drop `scv.vcv_statement_id` and `scv.rcv_statement_id`, add `scv.tier` and `scv.rcv_accession`, and move the two queries that use them to the column join. Done 29 October; `validate.sql` checks the join against the evidence lines every load.
-4. **The log, derived history and applying a release** (`scripts/history.sh`). Done 29 October and revised the same day after a review: the log holds raw records and doesn't depend on our schema, both stores keep immutable files with a closings table, and the derived history adds `rebuild`, a full re-derive above a threshold and a test (`pnpm test:history`). Checked on 2026-10-18 plus the 2026-10-24 delta.
+4. **The log, derived history and applying a release** (`scripts/history.sh`). Done 29 October and revised the same day after a review: the log holds raw records and doesn't depend on our schema, both stores keep immutable files with a closings table, and the derived history adds `rebuild` and a test (`pnpm test:history`). Checked on 2026-10-18 plus the 2026-10-24 delta.
 5. **Backfill** from the 2026-07 monthly, with the development checks, measuring time and growth per release.
-6. **API:** the as-of filter in the compiler and the one-off queries; a variant's versions and removals.
-7. **Web:** a history view on the variant page that renders a past version with its SCVs as they stood.
+6. **API:** a `release` parameter on every request meaning "as of this release" (a date between releases uses the latest release on or before it), applied by the shared compiler and each one-off query; the releases available; a variant's VCV versions and an SCV's versions, each with the releases it held.
+7. **Web:** see "In the app" below.
+
+## In the app
+
+Decided 29 October 2026:
+- **One mechanism, the release.**
+  - **The header** lists the releases available and can rewind the whole browser to one. Every page and query then reads the data as of that release, through the `release` URL parameter.
+  - **The variant page** lists the variant's VCV versions. Each links to the page as of the release that version first appeared in, so viewing VCV version N is the same rewind, not a separate feature.
+  - **The SCV tables** can show an SCV's past versions, each with the releases it held. They also show the VCV versions it was part of: the variant's VCV rows that held at the same time, each linking to the variant as of its release.
+- **The app reads the derived history's files directly** if that's fast enough on the variant page's queries. Otherwise it also writes a file of the current rows each week. To measure after the backfill.
+- **A local install** starts from a history shipped in the image (releases A to B) and can check for and apply upstream's deltas after B (`history.sh apply`, as the backfill does). If the history downloads quickly enough, it can be fetched at startup instead of shipped.
 
 ## Open questions
 
 1. **Which columns count as a change.** Every column (the hash) is simplest, and catches the MedGen re-mappings. The rows keep every change; a timeline could show only version and classification changes.
-2. **How the app reads the derived history:** the anti-join over each table's files, or a file of the current rows written each week for current pages (and the anti-join for past ones). To measure on the variant page's queries after the backfill.
-3. **HGVS ordinals.** Most of `variant_hgvs`'s churn is expressions shifting position after an insertion: in 2026-10-24, about 9,000 rows changed content against about 44,000 by `(variation_id, ordinal)` (a review's measurement, 29 October). Comparing these rows by content, and keeping today's order for past views, would cut that. To decide from the backfill's growth.
-4. **The full re-derive threshold** (10% of variants), to set from the backfill.
-5. **What "as of a date" covers in the app.** First a record's history (step 7). The whole app at a past date (search, gene pages, conflicts) is the same filter on every query, so it stays possible.
-6. **Where history lives for a local install:** shipped built, or built by each install from the log.
-7. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).
+2. **HGVS ordinals.** Most of `variant_hgvs`'s churn is expressions shifting position after an insertion: in 2026-10-24, about 9,000 rows changed content against about 44,000 by `(variation_id, ordinal)` (a review's measurement, 29 October). Comparing these rows by content, and keeping today's order for past views, would cut that. To decide from the backfill's growth.
+3. **Shipping the history in the image or downloading it at startup,** to decide from its size after the backfill.
+4. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).

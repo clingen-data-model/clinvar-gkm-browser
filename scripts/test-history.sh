@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Test scripts/history.sh on the committed fixture (packages/derive/test/history, written by
 # scripts/make-history-fixture.sh): start from the base, apply the real 2026-10-24 delta and two
-# synthetic ones, and after each, check the derived history against a full derivation. Runs twice:
-# tracing the affected variants, and re-deriving every release in full. About a minute.
+# synthetic ones, and after each, check the derived history against a full derivation. Then resume
+# an interrupted run and rebuild from the log. About half a minute.
 #
 # The real delta has a merged variant (a proposition changes subject; a variation, its VCV and RCV
 # are deleted) and a changed condition. The synthetic deltas, built from the base records, add:
@@ -82,9 +82,9 @@ CREATE TABLE d AS SELECT section, key,
 CREATE TABLE del (section VARCHAR, key VARCHAR);
 "
 
-run() {  # <name> <HISTORY_FULL_FRACTION>
+run() {  # <name>
   local name=$1 out
-  export CLINVAR_DATA_DIR="$tmp/$name" HISTORY_DIR="$tmp/$name/history" HISTORY_FULL_FRACTION=$2
+  export CLINVAR_DATA_DIR="$tmp/$name" HISTORY_DIR="$tmp/$name/history"
   mkdir -p "$CLINVAR_DATA_DIR/tmp"
   echo "== $name"
   "$SCRIPTS/history.sh" init "$FIXTURE/base" >/dev/null
@@ -123,6 +123,5 @@ run() {  # <name> <HISTORY_FULL_FRACTION>
   echo "  rebuilt from the log"
 }
 
-run traced 1
-run full 0
+run history
 echo "history tests passed"
