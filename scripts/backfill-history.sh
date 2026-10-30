@@ -4,6 +4,9 @@
 # in order. Files are checked against the line index's sha256 and kept under data/gkm-json/, mirroring
 # upstream's paths, so a rerun downloads nothing twice.
 #
+# A run that stopped carries on from the log's last release (history.sh apply first brings the
+# derived history up to the log).
+#
 # Usage: scripts/backfill-history.sh <monthly, e.g. 2026-07> [through release, e.g. 2026-10-24]
 #   CHECK=1 also runs scripts/history.sh check after every release (about 10 minutes each).
 set -euo pipefail
@@ -40,16 +43,25 @@ echo "monthly $month (release $start), then $(grep -c . <<<"$deltas" || true) de
 
 work="$DATA_DIR/tmp/backfill"
 mkdir -p "$work"
+log_releases="${HISTORY_DIR:-$DATA_DIR/history}/log/releases.parquet"
 
-bundle="$(fetch "$(jq -r .path <<<"$monthly")" "$(jq -r .sha256 <<<"$monthly")")"
-echo "reading the monthly"
-"$SCRIPTS/state-from-bundle.sh" "$bundle" "$work/state-$start" "$start" "$(jq -r .modified <<<"$monthly")"
-"$SCRIPTS/history.sh" init "$work/state-$start"
-rm -rf "$work/state-$start"
+# A history already started (an earlier run that stopped) carries on from the log's last release.
+if [[ -f $log_releases ]]; then
+  last="$(duckdb -noheader -list -c "SELECT max(release) FROM read_parquet('$log_releases')")"
+  echo "resuming: the log ends at $last"
+else
+  last="$start"
+  bundle="$(fetch "$(jq -r .path <<<"$monthly")" "$(jq -r .sha256 <<<"$monthly")")"
+  echo "reading the monthly"
+  "$SCRIPTS/state-from-bundle.sh" "$bundle" "$work/state-$start" "$start" "$(jq -r .modified <<<"$monthly")"
+  "$SCRIPTS/history.sh" init "$work/state-$start"
+  rm -rf "$work/state-$start"
+fi
 
 while read -r d; do
   [[ -n $d ]] || continue
   release="$(jq -r .release <<<"$d")"
+  [[ $release > $last ]] || continue
   manifest_path="$(jq -r .manifest <<<"$d")"
   mkdir -p "$(dirname "$JSON_DIR/$manifest_path")"
   curl -sSf -o "$JSON_DIR/$manifest_path" "$BASE_URL/$manifest_path"

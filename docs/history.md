@@ -192,6 +192,44 @@ That's a 4.6 GB download plus 415 MB of deltas. Ask before downloading and runni
 
 Upstream's known-issues page reports an allele mismatch between 2026-08-22 and 2026-08-29 in 1.0.1, fixed in 1.1.0. Its own delta-reconstruction check finds no difference on every section for all 16 consecutive pairs.
 
+**Run 29–30 October 2026**, on the development Mac. The history now holds 2026-06-27 to 2026-10-24, 18 releases.
+- **Reading the monthly** (4.5 GB gzipped, 63 GB of JSON) took about 25 minutes. The line-by-line split is single-threaded, so it dominates.
+- **Starting the history from it** took about 8 minutes.
+- **The 17 deltas** took 11 minutes in all: 20 to 95 s each, roughly in proportion to the variants touched (6,405 to 327,313).
+
+| Release | Variants affected | Apply |
+| --- | --- | --- |
+| 2026-07-06 | 109,487 | 36 s |
+| 2026-07-27 | 176,550 | 56 s |
+| 2026-08-22 | 6,405 | 21 s |
+| 2026-09-23 | 327,313 | 95 s |
+| 2026-09-28 | 171,307 | 80 s |
+| 2026-10-24 | 11,467 | 31 s |
+
+The first run stopped at 2026-09-28, out of memory converting its affected variants' records (see "Large records convert in batches" below). It resumed from the log, with the monthly not read again.
+
+**Growth over the 17 weeks:** 9.9% more rows across the derived tables, about 0.6% a week. The derived history went from 1.9 to 2.0 GB, and the log is 4.4 GB.
+
+| Table | Base rows | Added | Closed | Growth |
+| --- | --- | --- | --- | --- |
+| `scv_classification_pair` | 12,948,490 | 3,650,084 | 1,317,368 | 28.2% |
+| `variant_hgvs` | 41,733,510 | 2,387,916 | 674,243 | 5.7% |
+| `vcv_statement` | 8,841,570 | 1,561,269 | 1,235,964 | 17.7% |
+| `rcv_statement` | 11,298,814 | 1,455,339 | 696,398 | 12.9% |
+| `variant` | 4,531,457 | 831,463 | 670,703 | 18.3% |
+| `scv` | 6,374,753 | 700,674 | 220,876 | 11.0% |
+| `scv_condition` | 6,848,453 | 503,817 | 14,633 | 7.4% |
+| `conditionSet` | 81,431 | 31,610 | 12,297 | 38.8% |
+
+82% of the closed `variant_hgvs` rows (551,640 of 674,243) were position shifts only: the same content was added back at another ordinal in the same release (open question 2).
+
+**Checks after the backfill:**
+- **Derived:** as of 2026-10-24, the derived history equals a full derivation of the log's state in all 18 tables.
+- **Upstream's records:** as of 2026-10-18, the log equals the state built from our 2026-10-18 parquet copy in 13 of 20 sections, record for record.
+  - In the other seven the records differ as text, because the monthly bundle and the parquet export order JSON keys differently.
+  - Compared as parsed JSON (a 30,000-record sample per section, all of `condition`), every record is equal apart from the order of lists. These are 1,675 conditions' `aliases` and one variation's processing messages. Upstream's change log ignores array order, so it never sends these as changes, and the log keeps the bundle's order.
+- **A record read straight from the history files:** a variant's SCVs as of 2026-10-24 take about 55 ms, the same as from one derived release (DuckDB CLI).
+
 ## Checks during development
 
 These verify the approach. They aren't part of the product: a user's install only applies deltas.
@@ -248,13 +286,17 @@ Costs on the development Mac, 29 October:
 
 Large records (up to 0.5 MB of JSON, and a variation's nested HGVS list) ran out of DuckDB's 4 GB limit at first. Both steps now use 3 threads, 20,000-row groups and a spill directory.
 
+**Large records convert in batches** (30 October 2026). DuckDB converts 2,048 records at a time, and a large variation record expands into many nested values. A whole release has 14,865 records over 100 KB (1.8 GB of JSON), spread among 91 million. But the variants a big week touches cluster them: the backfill's 2026-09-28 apply gathered 169,039 variations, 7,779 of them over 100 KB (939 MB). Converting those ran out of memory even on one thread.
+
+So `convert-state.sh` converts records over 50 KB separately, in batches of at most 32 MB of JSON, and checks that every record becomes exactly one row. The 200 largest records of 2026-10-18 together peak at 1.2 GB. The 2026-09-28 subset now converts in 41 s. Once converted, the load reads such clusters without trouble: `load.sql`'s HGVS step over all 7,779 rows (2.9M HGVS rows) peaks at 2.3 GB.
+
 ## Steps
 
 1. This doc. Revised 29 October.
 2. **The converter:** the columns above, and a reader for bundles and deltas, one record per line. Done, re-checked against all of 2026-10-18 on 29 October.
 3. **Schema:** drop `scv.vcv_statement_id` and `scv.rcv_statement_id`, add `scv.tier` and `scv.rcv_accession`, and move the two queries that use them to the column join. Done 29 October; `validate.sql` checks the join against the evidence lines every load.
 4. **The log, derived history and applying a release** (`scripts/history.sh`). Done 29 October and revised the same day after a review: the log holds raw records and doesn't depend on our schema, both stores keep immutable files with a closings table, and the derived history adds `rebuild` and a test (`pnpm test:history`). Checked on 2026-10-18 plus the 2026-10-24 delta.
-5. **Backfill** from the 2026-07 monthly, with the development checks, measuring time and growth per release.
+5. **Backfill** from the 2026-07 monthly, with the development checks, measuring time and growth per release. Done 30 October: 2026-06-27 to 2026-10-24.
 6. **API:** a `release` parameter on every request meaning "as of this release" (a date between releases uses the latest release on or before it), applied by the shared compiler and each one-off query; the releases available; a variant's VCV versions and an SCV's versions, each with the releases it held.
 7. **Web:** see "In the app" below.
 
@@ -271,6 +313,6 @@ Decided 29 October 2026:
 ## Open questions
 
 1. **Which columns count as a change.** Every column (the hash) is simplest, and catches the MedGen re-mappings. The rows keep every change; a timeline could show only version and classification changes.
-2. **HGVS ordinals.** Most of `variant_hgvs`'s churn is expressions shifting position after an insertion: in 2026-10-24, about 9,000 rows changed content against about 44,000 by `(variation_id, ordinal)` (a review's measurement, 29 October). Comparing these rows by content, and keeping today's order for past views, would cut that. To decide from the backfill's growth.
+2. **HGVS ordinals.** Most of `variant_hgvs`'s churn is expressions shifting position after an insertion: 82% of its closed rows over the backfill's 17 weeks. Comparing these rows by content, and keeping today's order for past views, would cut that. To decide from the backfill's growth.
 3. **Shipping the history in the image or downloading it at startup,** to decide from its size after the backfill.
 4. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).
