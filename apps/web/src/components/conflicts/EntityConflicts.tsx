@@ -14,6 +14,8 @@ import { PairList, pairListParams } from './PairList.tsx';
 import { Scorecard } from './Scorecard.tsx';
 import { TermGrid } from './TermGrid.tsx';
 import { VariantConflictList, variantConflictParams } from './VariantConflictList.tsx';
+import { useRelease } from '../../lib/release.ts';
+import type { Release } from '../../lib/api/queries.ts';
 
 /**
  * The requests behind a gene's or condition's Conflicts tab. Its filters apply to every
@@ -31,27 +33,34 @@ function requests(filters: Params, search: ConflictSearch) {
 
 export async function prefetchEntityConflicts(
   queryClient: QueryClient,
+  release: Release,
   filters: Params,
   search: ConflictSearch,
 ): Promise<void> {
   const r = requests(filters, search);
   await Promise.all([
-    queryClient.query(vocabulariesQuery()),
-    queryClient.query(variantSummaryQuery(r.scorecard)),
-    queryClient.query(pairSummaryQuery(r.grid)),
-    queryClient.query(variantListQuery(variantConflictParams(r.base, search.variants_page ?? 1))),
+    queryClient.query(vocabulariesQuery(release)),
+    queryClient.query(variantSummaryQuery(release, r.scorecard)),
+    queryClient.query(pairSummaryQuery(release, r.grid)),
     queryClient.query(
-      pairListQuery(pairListParams(r.pairs, search.pairs_page ?? 1, search.show !== 'all')),
+      variantListQuery(release, variantConflictParams(r.base, search.variants_page ?? 1)),
+    ),
+    queryClient.query(
+      pairListQuery(
+        release,
+        pairListParams(r.pairs, search.pairs_page ?? 1, search.show !== 'all'),
+      ),
     ),
   ]);
 }
 
 /** Conflicts among all submissions on a gene's or condition's variants. */
 export function EntityConflicts({ filters, search }: { filters: Params; search: ConflictSearch }) {
-  const vocab = useSuspenseQuery(vocabulariesQuery()).data.data;
+  const release = useRelease();
+  const vocab = useSuspenseQuery(vocabulariesQuery(release)).data.data;
   const r = requests(filters, search);
-  const scorecard = useSuspenseQuery(variantSummaryQuery(r.scorecard)).data;
-  const grid = useSuspenseQuery(pairSummaryQuery(r.grid)).data;
+  const scorecard = useSuspenseQuery(variantSummaryQuery(release, r.scorecard)).data;
+  const grid = useSuspenseQuery(pairSummaryQuery(release, r.grid)).data;
   const cell = search.terms?.split(',');
   const cellLabel = (code: string | undefined) =>
     code === undefined ? '' : (termOf(vocab, `PATH:${code}`)?.label ?? code);

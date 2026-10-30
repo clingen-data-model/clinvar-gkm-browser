@@ -4,13 +4,14 @@ import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { z } from 'zod';
 import { Page } from '../components/shell/Page.tsx';
 import { searchQuery } from '../lib/api/queries.ts';
+import { useRelease } from '../lib/release.ts';
 
 export const Route = createFileRoute('/search')({
   validateSearch: z.object({ q: z.string().catch('') }),
   loaderDeps: ({ search }) => ({ q: search.q.trim() }),
   loader: async ({ context, deps }) => {
     if (deps.q === '') return;
-    const found = await context.queryClient.query(searchQuery(deps.q));
+    const found = await context.queryClient.query(searchQuery(context.release, deps.q));
     // An identifier that names exactly one thing goes straight to it.
     const only = found.results.length === 1 ? found.results[0] : undefined;
     if (only !== undefined && found.recognizedAs !== 'name') throw redirect(hrefOf(only));
@@ -56,7 +57,8 @@ function SearchPage() {
 }
 
 function Results({ q }: { q: string }) {
-  const { data } = useSuspenseQuery(searchQuery(q));
+  const release = useRelease();
+  const { data } = useSuspenseQuery(searchQuery(release, q));
   const byKind = new Map<SearchResult['kind'], SearchResult[]>();
   for (const r of data.results) byKind.set(r.kind, [...(byKind.get(r.kind) ?? []), r]);
   return (

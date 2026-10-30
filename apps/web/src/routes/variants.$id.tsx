@@ -6,18 +6,26 @@ import { Page } from '../components/shell/Page.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
 import { AggregateCalls } from '../components/variant/AggregateCalls.tsx';
 import { GeneList } from '../components/variant/GeneList.tsx';
-import { variantQuery, variantScvsQuery, vocabulariesQuery } from '../lib/api/queries.ts';
+import { VcvVersionList } from '../components/history/VcvVersionList.tsx';
+import {
+  variantQuery,
+  variantScvsQuery,
+  variantVersionsQuery,
+  vocabulariesQuery,
+} from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
 import { useTypeLabels } from '../lib/vocabulary.ts';
+import { useRelease } from '../lib/release.ts';
 
 export const Route = createFileRoute('/variants/$id')({
   params: idParams,
-  loader: ({ context: { queryClient }, params }) =>
+  loader: ({ context: { queryClient, release }, params }) =>
     orNotFound(
       Promise.all([
-        queryClient.query(variantQuery(params.id)),
-        queryClient.query(variantScvsQuery(params.id)),
-        queryClient.query(vocabulariesQuery()),
+        queryClient.query(variantQuery(release, params.id)),
+        queryClient.query(variantScvsQuery(release, params.id)),
+        queryClient.query(variantVersionsQuery(params.id)),
+        queryClient.query(vocabulariesQuery(release)),
       ]),
     ),
   component: VariantPage,
@@ -27,9 +35,11 @@ const SNP = 'https://www.ncbi.nlm.nih.gov/snp/';
 const CAR = 'https://reg.clinicalgenome.org/';
 
 function VariantPage() {
+  const release = useRelease();
   const { id } = Route.useParams();
-  const variant = useSuspenseQuery(variantQuery(id)).data.data;
-  const scvs = useSuspenseQuery(variantScvsQuery(id)).data.data;
+  const { release: shown, data: variant } = useSuspenseQuery(variantQuery(release, id)).data;
+  const versions = useSuspenseQuery(variantVersionsQuery(id)).data.data;
+  const scvs = useSuspenseQuery(variantScvsQuery(release, id)).data.data;
   const typeLabels = useTypeLabels();
 
   const rsids = variant.xrefs.filter((x) => x.system.startsWith(SNP)).map((x) => `rs${x.code}`);
@@ -105,6 +115,13 @@ function VariantPage() {
           Submissions <span className="text-muted-foreground">({scvs.length})</span>
         </h2>
         <ScvTable rows={scvs} typeLabels={typeLabels} />
+      </section>
+
+      <section aria-labelledby="versions" className="mb-10">
+        <h2 id="versions" className="mb-3">
+          VCV versions
+        </h2>
+        <VcvVersionList variationId={id} versions={versions} shown={shown} />
       </section>
 
       <section aria-labelledby="identifiers">
