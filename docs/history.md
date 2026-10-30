@@ -307,7 +307,20 @@ Decided 29 October 2026:
   - **The header** lists the releases available and can rewind the whole browser to one. Every page and query then reads the data as of that release, through the `release` URL parameter.
   - **The variant page** lists the variant's VCV versions. Each links to the page as of the release that version first appeared in, so viewing VCV version N is the same rewind, not a separate feature.
   - **The SCV tables** can show an SCV's past versions, each with the releases it held. They also show the VCV versions it was part of: the variant's VCV rows that held at the same time, each linking to the variant as of its release.
-- **The app reads the derived history's files directly** if that's fast enough on the variant page's queries. Otherwise it also writes a file of the current rows each week. To measure after the backfill.
+- **The app reads the derived history's files directly** (decided 30 October 2026). The server registers each release in `data/history/<schema>/` as a schema of views, each table's rows as of that release (`Database.addHistory`), so every query runs unchanged. A history release replaces a derived release of the same date. Measured over the backfill (2026-06-27 to 2026-10-24), best of three after a warm-up, against the single-file 2026-10-18 release:
+
+  | Request | Single file | History as of 2026-10-18 |
+  | --- | --- | --- |
+  | `/variants/17004` (the variant with most SCVs) | 74 ms | 134 ms |
+  | `/variants/17004/scvs` | 43 ms | 72 ms |
+  | `/scvs?gene=7273` | 67 ms | 97 ms |
+  | `/scvs/summary?group_by=bucket` (every SCV) | 120 ms | 143 ms |
+  | `/scv-pairs?gene=7273` | 134 ms | 202 ms |
+  | `/scv-pairs/summary?group_by=a.bucket,b.bucket` (every pair) | 177 ms | 251 ms |
+  | `/variants/summary?group_by=variant_type` (every variant) | 483 ms | 650 ms |
+
+  About 1.2 to 1.8 times as long, and the same as of 2026-07-06 or 2026-10-24. Startup registers the 18 releases and counts their rows in about 9 s. So no file of current rows.
+- **A date between releases** in `release` means the latest release on or before it; the response's `release` says which (decided 29 October 2026).
 - **A local install** starts from a history shipped in the image (releases A to B) and can check for and apply upstream's deltas after B (`history.sh apply`, as the backfill does). If the history downloads quickly enough, it can be fetched at startup instead of shipped.
 
 ## Open questions

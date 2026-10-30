@@ -45,7 +45,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 
 | Filter | Applies to | Meaning |
 | --- | --- | --- |
-| `release` | all | ClinVar release date; default latest |
+| `release` | all | ClinVar release date; default latest. A date between releases means the data as of that date, the latest release on or before it; the response's `release` says which |
 | `variant` | SCVs, variants | variation ID |
 | `gene` | SCVs, variants | NCBI gene ID, through the variant's gene list |
 | `gene_relationship` | SCVs, variants | which relationships to the gene count, any of `single`, `overlap`, `spanning`, `near`, `asserted` (default `single,overlap`; see open question 2) |
