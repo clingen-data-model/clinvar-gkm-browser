@@ -1,0 +1,9 @@
+{
+  "source_release": "2026-10-24",
+  "baseline_release": "2026-10-18",
+  "build_date": "2026-10-27",
+  "schema_version": "1.1.0",
+  "dataset": "clinvar-gkm-delta_2026-1024.json.gz",
+  "origin": "delta",
+  "sha256": "cec160e7914e03e896398e5ec60da4e2d37e48ddd5d267f936eef5705b4e76f7"
+}

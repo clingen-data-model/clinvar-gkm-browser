@@ -1,1 +1,35 @@
-{"clinvar_release":"2026-10-18","parquet_build_date":"2026-10-22 17:58:46","gkm_schema_version":"1.1.0","gkm_dataset":"clinvar_2026_10_18_v2_6_0","derived_schema":1,"loaded_at":"2026-10-29 17:15:36.871446","tables":[{"name":"allele","rows":350},{"name":"classification_term","rows":35},{"name":"classification_type","rows":16},{"name":"condition","rows":156},{"name":"conditionSet","rows":61},{"name":"copyNumberChange","rows":2},{"name":"copyNumberCount","rows":17},{"name":"gene","rows":3085},{"name":"location","rows":336},{"name":"rcv_statement","rows":1534},{"name":"reference_issue","rows":0},{"name":"release","rows":1},{"name":"review_status","rows":14},{"name":"scv","rows":1073},{"name":"scv_classification_pair","rows":26146},{"name":"scv_condition","rows":1165},{"name":"sequenceReference","rows":214},{"name":"source_file","rows":22},{"name":"submission_level","rows":6},{"name":"submitter","rows":189},{"name":"variant","rows":370},{"name":"variant_gene","rows":6893},{"name":"variant_hgvs","rows":6879},{"name":"variant_xref","rows":1040},{"name":"vcv_statement","rows":825}]}
+{
+  "clinvar_release": "2026-10-18",
+  "parquet_build_date": "2026-10-22 17:58:46",
+  "gkm_schema_version": "1.1.0",
+  "gkm_dataset": "clinvar_2026_10_18_v2_6_0",
+  "derived_schema": 1,
+  "loaded_at": "2026-10-29 17:15:36.871446",
+  "tables": [
+    { "name": "allele", "rows": 350 },
+    { "name": "classification_term", "rows": 35 },
+    { "name": "classification_type", "rows": 16 },
+    { "name": "condition", "rows": 156 },
+    { "name": "conditionSet", "rows": 61 },
+    { "name": "copyNumberChange", "rows": 2 },
+    { "name": "copyNumberCount", "rows": 17 },
+    { "name": "gene", "rows": 3085 },
+    { "name": "location", "rows": 336 },
+    { "name": "rcv_statement", "rows": 1534 },
+    { "name": "reference_issue", "rows": 0 },
+    { "name": "release", "rows": 1 },
+    { "name": "review_status", "rows": 14 },
+    { "name": "scv", "rows": 1073 },
+    { "name": "scv_classification_pair", "rows": 26146 },
+    { "name": "scv_condition", "rows": 1165 },
+    { "name": "sequenceReference", "rows": 214 },
+    { "name": "source_file", "rows": 22 },
+    { "name": "submission_level", "rows": 6 },
+    { "name": "submitter", "rows": 189 },
+    { "name": "variant", "rows": 370 },
+    { "name": "variant_gene", "rows": 6893 },
+    { "name": "variant_hgvs", "rows": 6879 },
+    { "name": "variant_xref", "rows": 1040 },
+    { "name": "vcv_statement", "rows": 825 }
+  ]
+}

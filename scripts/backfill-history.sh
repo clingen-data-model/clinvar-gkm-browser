@@ -44,10 +44,8 @@ mkdir -p "$work"
 bundle="$(fetch "$(jq -r .path <<<"$monthly")" "$(jq -r .sha256 <<<"$monthly")")"
 echo "reading the monthly"
 "$SCRIPTS/state-from-bundle.sh" "$bundle" "$work/state-$start" "$start" "$(jq -r .modified <<<"$monthly")"
-"$SCRIPTS/convert-state.sh" "$work/state-$start" "$work/conv-$start"
+"$SCRIPTS/history.sh" init "$work/state-$start"
 rm -rf "$work/state-$start"
-"$SCRIPTS/history.sh" init "$work/conv-$start"
-rm -rf "$work/conv-$start"
 
 while read -r d; do
   [[ -n $d ]] || continue

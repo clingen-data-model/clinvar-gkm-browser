@@ -83,5 +83,7 @@ COPY (
 ) TO '$out/manifest.json' (FORMAT json);
 SQL
 } | duckdb
+# The manifest is committed, so keep it as `pnpm format` would.
+pnpm exec prettier --write "$out/manifest.json" >/dev/null
 
 du -sh "$out"
