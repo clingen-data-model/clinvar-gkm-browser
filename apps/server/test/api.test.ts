@@ -13,6 +13,7 @@ import {
   SearchResponse,
   SummaryResponse,
   VariantRow,
+  VcvVersion,
   Vocabularies,
 } from '@cvb/shared/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -48,6 +49,17 @@ describe('releases', () => {
     const { status, body } = await get('/api/v1/variants/10?release=2020-01-01', ProblemDetails);
     expect(status).toBe(404);
     expect(body.detail).toBe('No release is available on or before 2020-01-01.');
+  });
+
+  it('lists versions from the one release when there is no history', async () => {
+    const { status, body } = await get(
+      '/api/v1/variants/10/versions',
+      z.object({ data: z.array(VcvVersion) }),
+    );
+    expect(status).toBe(200);
+    expect(body.data).toEqual([
+      expect.objectContaining({ from: FIXTURE_RELEASE, to: null, fromStart: true }),
+    ]);
   });
 
   it('answers a later date from the latest release on or before it', async () => {

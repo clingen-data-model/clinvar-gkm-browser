@@ -242,3 +242,29 @@ export const VariantRow = z.object({
   buckets: BucketCounts,
 });
 export type VariantRow = z.infer<typeof VariantRow>;
+
+/**
+ * A span of releases: `from` the first release that has it, `to` the first that no longer does
+ * (null while it holds). `fromStart` when `from` is the earliest release available, so it may
+ * be older than that.
+ */
+const ReleaseSpan = z.object({
+  from: z.iso.date(),
+  to: z.iso.date().nullable(),
+  fromStart: z.boolean(),
+});
+
+/** A VCV version of a variant, and the releases it held in. */
+export const VcvVersion = ReleaseSpan.extend({ version: z.int().nullable() });
+export type VcvVersion = z.infer<typeof VcvVersion>;
+
+/** A version of an SCV, as of its last release, and the variant's VCV versions it overlapped. */
+export const ScvVersion = ReleaseSpan.extend({
+  version: z.int(),
+  variationId: z.int(),
+  classification: z.string().nullable(),
+  reviewStatus: z.string().nullable(),
+  dateLastEvaluated: z.iso.date().nullable(),
+  vcvVersions: z.array(VcvVersion),
+});
+export type ScvVersion = z.infer<typeof ScvVersion>;

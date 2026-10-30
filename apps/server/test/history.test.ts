@@ -5,18 +5,32 @@ import { mkdirSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { item, ReleaseList, ScvDetail } from '@cvb/shared/api';
+import { item, ReleaseList, ScvDetail, ScvVersion, VcvVersion } from '@cvb/shared/api';
 import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { Database } from '../src/data/database.ts';
 import { DERIVED_SCHEMA, findHistory } from '../src/data/releases.ts';
 import { buildServer } from '../src/server.ts';
 import { FIXTURE_DIR, FIXTURE_RELEASE } from './helpers.ts';
 
 const NEXT = '2026-10-25';
-const CHANGED = 198337; // reclassified in NEXT
-const DELETED = 20169; // gone in NEXT
+const VARIANT = 10;
+const CHANGED = 198337; // on VARIANT, a new version reclassifying it in NEXT
+const DELETED = 20169; // on VARIANT, gone in NEXT
+// What NEXT changes: rows replaced (with the new values) and rows closed.
+const NEXT_CHANGES: Partial<Record<string, { where: string; replace: string; closes: string }>> = {
+  scv: {
+    where: `scv_id = ${String(CHANGED)}`,
+    replace: `scv_version + 1 AS scv_version, 'Benign' AS classification`,
+    closes: `scv_id IN (${String(CHANGED)}, ${String(DELETED)})`,
+  },
+  variant: {
+    where: `variation_id = ${String(VARIANT)}`,
+    replace: 'vcv_version + 1 AS vcv_version',
+    closes: `variation_id = ${String(VARIANT)}`,
+  },
+};
 // Each history table's natural key, as scripts/history.sh names closed rows.
 const TABLES: Record<string, string[]> = {
   variant: ['variation_id'],
@@ -53,18 +67,14 @@ async function writeHistory(dataDir: string): Promise<void> {
       `COPY (SELECT ${key.join(', ')}, DATE '${FIXTURE_RELEASE}' AS valid_from FROM ${from} LIMIT 0)
          TO ${part('closed', table, FIXTURE_RELEASE)} (FORMAT parquet)`,
     );
-    // The next release: one SCV reclassified, another deleted; every other table unchanged.
+    // The next release changes only the rows NEXT_CHANGES names.
+    const change = NEXT_CHANGES[table];
     statements.push(
-      table === 'scv'
-        ? `COPY (SELECT * REPLACE ('Benign' AS classification) FROM ${from} WHERE scv_id = ${String(CHANGED)})
-             TO ${part('added', table, NEXT)} (FORMAT parquet)`
-        : `COPY (FROM ${from} LIMIT 0) TO ${part('added', table, NEXT)} (FORMAT parquet)`,
-      table === 'scv'
-        ? `COPY (SELECT scv_id, DATE '${FIXTURE_RELEASE}' AS valid_from FROM ${from}
-                 WHERE scv_id IN (${String(CHANGED)}, ${String(DELETED)}))
-             TO ${part('closed', table, NEXT)} (FORMAT parquet)`
-        : `COPY (SELECT ${key.join(', ')}, DATE '${FIXTURE_RELEASE}' AS valid_from FROM ${from} LIMIT 0)
-             TO ${part('closed', table, NEXT)} (FORMAT parquet)`,
+      `COPY (${change ? `SELECT * REPLACE (${change.replace}) FROM ${from} WHERE ${change.where}` : `FROM ${from} LIMIT 0`})
+         TO ${part('added', table, NEXT)} (FORMAT parquet)`,
+      `COPY (SELECT ${key.join(', ')}, DATE '${FIXTURE_RELEASE}' AS valid_from FROM ${from}
+             WHERE ${change ? change.closes : 'false'})
+         TO ${part('closed', table, NEXT)} (FORMAT parquet)`,
     );
   }
   for (const table of PLAIN) {
@@ -166,5 +176,41 @@ describe('a release history', () => {
     );
     expect(body.release).toBe(FIXTURE_RELEASE);
     expect(body.data.classification).toBe('Uncertain significance');
+  });
+
+  it("lists a variant's VCV versions with the releases each held in", async () => {
+    const { body } = await get(
+      `/api/v1/variants/${String(VARIANT)}/versions`,
+      z.object({ data: z.array(VcvVersion) }),
+    );
+    const [first, second] = body.data;
+    expect(body.data).toHaveLength(2);
+    expect(first).toMatchObject({ from: FIXTURE_RELEASE, to: NEXT, fromStart: true });
+    expect(second).toMatchObject({
+      version: (first?.version ?? 0) + 1,
+      from: NEXT,
+      to: null,
+      fromStart: false,
+    });
+  });
+
+  it("lists an SCV's versions with the VCV versions they overlapped", async () => {
+    const { body } = await get(
+      `/api/v1/scvs/${String(CHANGED)}/versions`,
+      z.object({ data: z.array(ScvVersion) }),
+    );
+    expect(body.data.map((v) => [v.classification, v.from, v.to])).toEqual([
+      ['Uncertain significance', FIXTURE_RELEASE, NEXT],
+      ['Benign', NEXT, null],
+    ]);
+    expect(body.data.map((v) => v.vcvVersions.map((x) => x.from))).toEqual([
+      [FIXTURE_RELEASE],
+      [NEXT],
+    ]);
+    const deleted = await get(
+      `/api/v1/scvs/${String(DELETED)}/versions`,
+      z.object({ data: z.array(ScvVersion) }),
+    );
+    expect(deleted.body.data.map((v) => v.to)).toEqual([NEXT]);
   });
 });

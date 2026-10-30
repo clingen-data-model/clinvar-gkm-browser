@@ -31,6 +31,8 @@ All under `/api/v1`. `{id}` is the integer ID unless noted.
 | Vocabularies | `/vocabularies/{name}` | `/vocabularies` | | classification types, terms and buckets, review statuses and stars, submission levels, collection methods, variant types, consequences |
 | Search | | `/search?q=` | | detects the input's shape (accession, rsID, HGVS, name) and returns typed matches |
 
+**Versions** span every release served, not just the one `release` names. `/variants/{id}/versions` lists a variant's VCV versions, and `/scvs/{id}/versions` an SCV's versions (each as of its last release, with the variant's VCV versions that held at the same time). Each version has `from`, the first release that has it, and `to`, the first that no longer does (null while current). `fromStart` marks a version already held in the earliest release served, so it may be older. Without a release history ([history.md](history.md)) they list only the release's own version.
+
 **Sub-resources** are shortcuts for a list with one filter fixed. `/variants/{id}/scvs` is `/scvs?variant={id}`, and `/genes/{id}/variants` is `/variants?gene={id}`. They exist for readable links; the list endpoint does the work.
 
 **Item responses** include what a detail page needs in one request. A variant comes with its MANE HGVS, genes, VRS member, cross-references, aggregate calls per classification type, and SCV counts by classification bucket. Lists return compact rows.

@@ -320,6 +320,7 @@ Decided 29 October 2026:
   | `/variants/summary?group_by=variant_type` (every variant) | 483 ms | 650 ms |
 
   About 1.2 to 1.8 times as long, and the same as of 2026-07-06 or 2026-10-24. Startup registers the 18 releases and counts their rows in about 9 s. So no file of current rows.
+- **Versions** (built 30 October 2026): `/variants/{id}/versions` and `/scvs/{id}/versions` read schema `history`, a view per table of every row ever with the release it first held in and the first it didn't (`Database.rowsEver`). An SCV version is grouped by `scv_version`, as of its last row, so a change without a new version (a staff edit) shows as the version's latest state. About 12 ms each on the backfill.
 - **A date between releases** in `release` means the latest release on or before it; the response's `release` says which (decided 29 October 2026).
 - **A local install** starts from a history shipped in the image (releases A to B) and can check for and apply upstream's deltas after B (`history.sh apply`, as the backfill does). If the history downloads quickly enough, it can be fetched at startup instead of shipped.
 

@@ -71,6 +71,7 @@ function files(dir: string, kind: 'added' | 'closed', table: string): string {
 export class Database {
   private readonly releases = new Map<string, ReleaseOnDisk>();
   private current: string | null = null;
+  private history = false;
   private readonly instance: DuckDBInstance;
   private readonly options: DatabaseOptions;
 
@@ -236,10 +237,47 @@ export class Database {
           throw error;
         }
       }
+      // Every row ever, with the releases it held in: the versions of a record.
+      await connection.run('DROP SCHEMA IF EXISTS history CASCADE');
+      await connection.run('CREATE SCHEMA history');
+      for (const { name, key } of tables) {
+        const on = key.map((k) => `c.${k} = a.${k}`).join(' AND ');
+        await connection.run(
+          `CREATE VIEW history.${name} AS
+           SELECT a.* EXCLUDE (release), a.release AS valid_from, c.release AS valid_to
+           FROM ${files(dir, 'added', name)} a
+           LEFT JOIN ${files(dir, 'closed', name)} c ON ${on} AND c.valid_from = a.release`,
+        );
+      }
+      this.history = true;
     } finally {
       connection.closeSync();
     }
     this.current = this.pickCurrent();
+  }
+
+  /**
+   * Whether a release history is loaded: then schema `history` has a view per table of every
+   * row ever, with valid_from (its first release) and valid_to (the first without it, or NULL).
+   */
+  get hasHistory(): boolean {
+    return this.history;
+  }
+
+  /**
+   * SQL for every row of a table with valid_from and valid_to: from schema `history` when a
+   * history is loaded, else the release's own rows, holding from that release on.
+   */
+  rowsEver(table: string): string {
+    if (!isIdentifier(table)) throw new Error(`not a table name: ${table}`);
+    return this.history
+      ? `history.${table}`
+      : `(SELECT *, (SELECT clinvar_release FROM release) AS valid_from, NULL::DATE AS valid_to FROM ${table})`;
+  }
+
+  /** The earliest release served, the start of what any version list can know. */
+  earliest(): string | null {
+    return [...this.releases.keys()].sort()[0] ?? null;
   }
 
   private pickCurrent(): string | null {

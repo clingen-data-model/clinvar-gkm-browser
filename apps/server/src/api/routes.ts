@@ -10,6 +10,7 @@ import {
   ReleaseQuery,
   ScvDetail,
   ScvRow,
+  ScvVersion,
   SubmitterDetail,
   VariantDetail,
   item,
@@ -19,6 +20,7 @@ import {
   SearchResponse,
   SummaryResponse,
   VariantRow,
+  VcvVersion,
   Vocabularies,
 } from '@cvb/shared/api';
 import {
@@ -35,10 +37,10 @@ import type { Database } from '../data/database.ts';
 import { problem, sendProblem } from '../http/errors.ts';
 import { conditionDetail, geneDetail, submitterDetail } from './entities/queries.ts';
 import { listPairs, pairOrder } from './pairs/queries.ts';
-import { listScvs, scvDetail, scvOrder, variantScvs } from './scvs/queries.ts';
+import { listScvs, scvDetail, scvOrder, scvVersions, variantScvs } from './scvs/queries.ts';
 import { summarize } from './summaries/queries.ts';
 import { search } from './search/queries.ts';
-import { listVariants, variantDetail, variantOrder } from './variants/queries.ts';
+import { listVariants, variantDetail, variantOrder, vcvVersions } from './variants/queries.ts';
 import { vocabularies } from './vocabulary/queries.ts';
 
 const IdParams = z.object({ id: IntId });
@@ -161,6 +163,50 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
       const release = db.resolve(req.query.release);
       const data = await conditionDetail(db, release, req.params.id);
       if (data === null) return sendProblem(reply, notFound('condition', req.params.id, release));
+      return { release, data };
+    },
+  );
+
+  // Versions span every release served, so `release` only names the envelope's release.
+  app.get(
+    '/variants/:id/versions',
+    {
+      schema: {
+        tags: ['variants'],
+        description: "A variant's VCV versions and the releases each held in, oldest first.",
+        params: IdParams,
+        querystring: ReleaseQuery,
+        response: { 200: z.object({ release: z.iso.date(), data: z.array(VcvVersion) }) },
+      },
+    },
+    async (req, reply) => {
+      const release = db.resolve(req.query.release);
+      const data = await vcvVersions(db, release, req.params.id);
+      if (data.length === 0) {
+        return sendProblem(reply, problem(404, `No variant ${req.params.id} in any release.`));
+      }
+      return { release, data };
+    },
+  );
+
+  app.get(
+    '/scvs/:id/versions',
+    {
+      schema: {
+        tags: ['scvs'],
+        description:
+          "An SCV's versions, each as of its last release, with the releases it held in and the variant's VCV versions at the time, oldest first.",
+        params: IdParams,
+        querystring: ReleaseQuery,
+        response: { 200: z.object({ release: z.iso.date(), data: z.array(ScvVersion) }) },
+      },
+    },
+    async (req, reply) => {
+      const release = db.resolve(req.query.release);
+      const data = await scvVersions(db, release, req.params.id);
+      if (data.length === 0) {
+        return sendProblem(reply, problem(404, `No SCV ${req.params.id} in any release.`));
+      }
       return { release, data };
     },
   );
