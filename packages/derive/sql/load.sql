@@ -111,14 +111,14 @@ FROM (SELECT variation_id, unnest(list_filter(extensions, lambda x: x.name = 'cl
 ORDER BY 1, 2;
 
 INSERT INTO variant_hgvs
-SELECT variation_id, ordinal,
+SELECT variation_id,
        h.nucleotideExpression.syntax, h.nucleotideExpression.value, h.nucleotideType,
        h.proteinExpression.value, coalesce(h.maneSelect, false), coalesce(h.manePlus, false),
        [mc.name for mc in h.molecularConsequence]
-FROM (SELECT variation_id, unnest(hs) AS h, unnest(range(1, len(hs) + 1)) AS ordinal
+FROM (SELECT variation_id, unnest(hs) AS h
       FROM (SELECT variation_id, list_filter(extensions, lambda x: x.name = 'clinvarHgvsList')[1].value_hgvs_array AS hs
             FROM stage.variation))
-ORDER BY variation_id, ordinal;
+ORDER BY variation_id, h.nucleotideExpression.value, h.proteinExpression.value;
 
 INSERT INTO variant_xref
 SELECT variation_id, m.coding.system, m.coding.code, m.relation
@@ -219,7 +219,7 @@ FROM stage.statement_row WHERE tree = 'rcv' ORDER BY variation_id, statement_id;
 
 -- Submissions ------------------------------------------------------------------------------------
 
--- The statement citing each SCV, per tree.
+-- The statement citing each SCV, per tree: the SCV keeps its tier and the RCV's accession.
 CREATE TABLE stage.scv_citing AS
 SELECT cited AS scv_statement_id, lower(left(citing, 3)) AS tree, citing AS statement_id
 FROM stage.edge
@@ -265,6 +265,7 @@ SELECT * FROM stage.prop WHERE id LIKE 'SCV%';
 INSERT INTO scv
 SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification_type,
        s.submission_level, s.review_status, s.classification, s.classification_code, ct.term,
+       nullif(statement_parts(v.statement_id).tier, ''),
        s.submitted_classification, s.direction, s.strength, s.collection_methods,
        s.assertion_criteria, s.description, s.date_submitted, s.date_created,
        s.date_last_evaluated, s.local_key,
@@ -279,8 +280,7 @@ SELECT s.scv_id, s.scv_version, p.variation_id, s.submitter_id, s.classification
        p.gene_context_name,
        p.gene_context_source,
        p.submitted_gene_symbols,
-       v.statement_id,
-       r.statement_id,
+       CAST(statement_parts(r.statement_id).accession AS INTEGER),
        s.reported_in,
        s.submitted_condition,
        s.submitted_condition_set

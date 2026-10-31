@@ -9,23 +9,25 @@ import {
 import { Facts } from '../components/ui/Facts.tsx';
 import { submitterQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
+import { useRelease } from '../lib/release.ts';
 
 /** A submitter's page: the band and its tabs, with the tab's content below. */
 export const Route = createFileRoute('/submitters/$id')({
   params: idParams,
-  loader: ({ context: { queryClient }, params }) =>
+  loader: ({ context: { queryClient, release }, params }) =>
     orNotFound(
       Promise.all([
-        queryClient.query(submitterQuery(params.id)),
-        queryClient.query(vocabulariesQuery()),
+        queryClient.query(submitterQuery(release, params.id)),
+        queryClient.query(vocabulariesQuery(release)),
       ]),
     ),
   component: SubmitterLayout,
 });
 
 function SubmitterLayout() {
+  const release = useRelease();
   const { id } = Route.useParams();
-  const submitter = useSuspenseQuery(submitterQuery(id)).data.data;
+  const submitter = useSuspenseQuery(submitterQuery(release, id)).data.data;
   // A head-to-head is part of the Conflicts tab, though not its route.
   const headToHead = useMatchRoute()({ to: '/submitters/$id/vs/$otherId', fuzzy: true }) !== false;
   return (

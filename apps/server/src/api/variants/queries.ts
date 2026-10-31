@@ -1,6 +1,8 @@
 // Variant reads. The detail is assembled from a few small queries, each reading only the rows
 // of one variant (the tables are sorted by variation_id).
 
+import type {
+  VcvVersion} from '@cvb/shared/api';
 import {
   AggregateStatement,
   VariantDetail,
@@ -57,7 +59,7 @@ export async function variantDetail(
               protein_expression AS "proteinExpression", mane_select AS "maneSelect",
               mane_plus AS "manePlus", molecular_consequences AS "molecularConsequences"
        FROM variant_hgvs WHERE variation_id = $1
-       ORDER BY mane_select DESC, mane_plus DESC, ordinal`,
+       ORDER BY mane_select DESC, mane_plus DESC, expression, protein_expression`,
       [variationId],
     ),
     db.query(
@@ -77,10 +79,12 @@ export async function variantDetail(
               coalesce(n.scvs, 0)::INTEGER AS "scvCount"
        FROM vcv_statement vs
        LEFT JOIN review_status rs ON rs.status = vs.review_status
-       -- The variant's SCVs per statement, counted once rather than per statement row.
-       LEFT JOIN (SELECT vcv_statement_id, count(*) AS scvs FROM scv
-                  WHERE variation_id = $1 GROUP BY vcv_statement_id) n
-         ON n.vcv_statement_id = vs.statement_id
+       -- The variant's SCVs per level (or somatic tier) node, counted once rather than per node.
+       -- An SCV's node is the one with its classification type, level and tier; roots match none.
+       LEFT JOIN (SELECT classification_type, submission_level, tier, count(*) AS scvs FROM scv
+                  WHERE variation_id = $1 GROUP BY ALL) n
+         ON n.classification_type = vs.classification_type AND n.submission_level = vs.submission_level
+        AND n.tier IS NOT DISTINCT FROM vs.tier
        LEFT JOIN classification_type t ON t.code = vs.classification_type
        LEFT JOIN submission_level sl ON sl.code = vs.submission_level
        WHERE vs.variation_id = $1
@@ -320,4 +324,33 @@ export async function listVariants(
     };
   });
   return { rows, total: n };
+}
+
+const Span = z.object({ from: z.iso.date(), to: z.iso.date().nullable() });
+
+/** SQL for the release span of grouped history rows, as `from` and `to`. */
+export const SPAN_COLUMNS = `
+  strftime(min(valid_from), '%Y-%m-%d') AS "from",
+  CASE WHEN bool_or(valid_to IS NULL) THEN NULL ELSE strftime(max(valid_to), '%Y-%m-%d') END AS "to"`;
+
+/** Marks the spans that start at the earliest release served (they may be older). */
+export function fromStart<T extends z.infer<typeof Span>>(db: Database, rows: T[]) {
+  const earliest = db.earliest();
+  return rows.map((r) => ({ ...r, fromStart: r.from === earliest }));
+}
+
+/** A variant's VCV versions over every release served, oldest first. */
+export async function vcvVersions(
+  db: Database,
+  release: string,
+  variationId: number,
+): Promise<VcvVersion[]> {
+  const rows = await db.query(
+    release,
+    `SELECT vcv_version AS version, ${SPAN_COLUMNS}
+     FROM ${db.rowsEver('variant')} v WHERE v.variation_id = $1
+     GROUP BY vcv_version ORDER BY min(valid_from), vcv_version`,
+    [variationId],
+  );
+  return fromStart(db, Span.extend({ version: z.int().nullable() }).array().parse(rows));
 }

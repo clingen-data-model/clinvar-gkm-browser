@@ -9,6 +9,7 @@ pnpm install --frozen-lockfile
 pnpm typecheck && pnpm lint && pnpm test   # run all three before calling a change done
 pnpm format                                # Prettier (Markdown, SQL and docs/research/ are not formatted)
 pnpm e2e                                   # Playwright and axe against the built app over the fixture
+pnpm test:history                          # release history (scripts/history.sh) on its fixture; needs the duckdb CLI
 pnpm dev                                   # server :8080 and Vite :5173, over data/ (or CLINVAR_DATA_DIR)
 scripts/sql.sh [release] [-c "SQL"]        # DuckDB over a derived release, a view per table
 ```
@@ -37,7 +38,7 @@ ESLint enforces the boundaries: only `queries.ts` files and `src/data/` touch th
 - **Faithful to upstream.** The derivation never invents, drops or repairs rows to satisfy a constraint. A relationship the data breaks is declared `NOT ENFORCED` in a comment and reported in `reference_issue` ([docs/schema.md](docs/schema.md#faithful-to-upstream)).
 - **Keep upstream's shape, names and IDs.** Reshape a table (columns from nested fields, a list unnested into a table) only when it measurably speeds up the app's queries, and record the measurement ([docs/schema.md](docs/schema.md#shape)). Keys are upstream's IDs, numeric ones as integers, never row numbers.
 - **Add a derived table when a common query keeps redoing request-independent work.** Do the work once per release in `load.sql` and have requests filter the result; `scv_classification_pair` is the model ([docs/data.md](docs/data.md#derived-model)). We measured other engines (a DuckDB file, SQLite, ClickHouse); the `clickhouse` branch is kept as a record and isn't merged.
-- **A schema change touches several places:** `schema.sql`, `load.sql`, `validate.sql`, `scripts/make-fixture.sh` (then regenerate the fixture), `docs/schema.md`, and the diagrams (`scripts/schema-diagrams.sh`).
+- **A schema change touches several places:** `schema.sql`, `load.sql`, `validate.sql`, `scripts/make-fixture.sh` (then regenerate the fixture), `docs/schema.md`, and the diagrams (`scripts/schema-diagrams.sh`). If `load.sql` reads another upstream record or joins in a new way, `scripts/history.sh` must trace it too (which variants a change reaches): run `pnpm test:history`, and extend its deltas for the new case.
 - **Vocabularies follow ClinGen's clinvar-ingest-bq-tools,** seeded in `schema.sql`. Conflict levels follow ClinVar Miner's 0–5 scale ([docs/data.md](docs/data.md#conflicts)).
 
 **Web**

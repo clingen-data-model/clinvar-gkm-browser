@@ -138,7 +138,7 @@ erDiagram
   scv }o--o{ rcv_evidenceLine : "evidence_items[]"
 ```
 
-Derived: propositions fold into their statements, so an SCV points straight to its variant, submitter, condition or condition set, and the VCV and RCV statements that cite it. A tree's parent is a column (`parent_statement_id`). `scv_condition` expands condition sets, and `scv_classification_pair` pairs SCVs on the same variant.
+Derived: propositions fold into their statements, so an SCV points straight to its variant, submitter, and condition or condition set. The VCV and RCV statements that cite it are found by its own columns (variant, classification type, level, tier and RCV accession), so the diagram has no line for them. A tree's parent is a column (`parent_statement_id`). `scv_condition` expands condition sets, and `scv_classification_pair` pairs SCVs on the same variant.
 
 <!-- schema-diagram area=submission -->
 ```mermaid
@@ -156,8 +156,6 @@ erDiagram
   condition |o--o{ scv : "condition_id"
   conditionSet |o--o{ scv : "condition_set_id"
   gene |o..o{ scv : "gene_context_id, not enforced"
-  vcv_statement ||--o{ scv : "vcv_statement_id"
-  rcv_statement ||--o{ scv : "rcv_statement_id"
   scv ||--o{ scv_condition : ""
   condition ||--o{ scv_condition : "condition_id"
   conditionSet |o--o{ scv_condition : "via_condition_set_id"
@@ -227,13 +225,13 @@ classification.primaryCoding.code = benign
    condition_unspecified = true                  ← trait 16789 is "not specified" (derived)
          gene_context_id = 25                    ← proposition.gene_context_id
      gene_context_symbol = ABL1
-        vcv_statement_id = VCV000133445.20-G-PATH-NOCP   ← the VCV level statement citing this SCV
-        rcv_statement_id = RCV000119949.2-G-PATH-NOCP    ← the RCV level statement citing this SCV
+                    tier = NULL                  ← somatic clinical impact only, from the citing statement
+           rcv_accession = 119949                ← the RCV citing this SCV, without its version
      submitted_condition = {name: not specified, ...}    ← extensions[submittedCondition], as published
              reported_in = []                    ← citations, as published
 ```
 
-Upstream, the citing VCV and RCV statements can only be found by searching `vcv_evidenceLine.evidence_items` and `rcv_evidenceLine.evidence_items` for the SCV's ID. Here they're two columns.
+Upstream, the citing VCV and RCV statements can only be found by searching `vcv_evidenceLine.evidence_items` and `rcv_evidenceLine.evidence_items` for the SCV's ID. Here they're a join on the SCV's own columns: the node with its variant, classification type, submission level and tier (within `rcv_accession` for the RCV). Here that's `VCV000133445.20-G-PATH-NOCP` and `RCV000119949.2-G-PATH-NOCP`.
 
 ## The same question in both shapes
 
@@ -324,7 +322,7 @@ Derived, each tree is one table with explicit structure:
 - `node_kind`: root, level or tier;
 - `parent_statement_id`: the node one step up;
 - `contributes`: whether the node counts toward its parent's call;
-- each SCV's `vcv_statement_id` and `rcv_statement_id`: the level node that cites it.
+- each SCV's level node: the one with its variant, classification type, submission level and tier (and RCV accession, for the RCV).
 
 The four evidence-line and statement tables (43M rows, 2.7 GB) become two tables (21M rows, 0.15 GB), one row per upstream statement. The diagram is in [schema.md](schema.md#aggregate-statement-trees).
 

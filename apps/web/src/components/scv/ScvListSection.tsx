@@ -4,6 +4,7 @@ import type { Params } from '../../lib/api/client.ts';
 import { scvListQuery } from '../../lib/api/queries.ts';
 import { useTypeLabels } from '../../lib/vocabulary.ts';
 import { ScvTable } from './ScvTable.tsx';
+import { useRelease } from '../../lib/release.ts';
 
 export const PAGE_SIZE = 50;
 
@@ -12,8 +13,9 @@ export const PAGE_SIZE = 50;
  * previous pages through the `page` search parameter of the current route.
  */
 export function ScvListSection({ filters, page }: { filters: Params; page: number }) {
+  const release = useRelease();
   const typeLabels = useTypeLabels();
-  const { data } = useSuspenseQuery(scvListQuery(scvListParams(filters, page)));
+  const { data } = useSuspenseQuery(scvListQuery(release, scvListParams(filters, page)));
   const total = data.page.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   return (

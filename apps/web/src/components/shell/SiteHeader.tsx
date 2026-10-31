@@ -1,22 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { releasesQuery } from '../../lib/api/queries.ts';
+import { ReleasePicker } from './ReleasePicker.tsx';
 import { SearchBox } from './SearchBox.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
-
-/** The ClinVar release being shown; every page's data comes from it. */
-function ReleaseStamp() {
-  const { data } = useQuery(releasesQuery());
-  if (data?.current == null) return null;
-  return (
-    <span
-      className="text-sm whitespace-nowrap text-muted-foreground"
-      title="The ClinVar release shown"
-    >
-      ClinVar {data.current}
-    </span>
-  );
-}
 
 export function SiteHeader() {
   return (
@@ -32,7 +17,7 @@ export function SiteHeader() {
           <a href="/api/v1/docs" className="text-sm">
             API
           </a>
-          <ReleaseStamp />
+          <ReleasePicker />
           <ThemeToggle />
         </nav>
       </div>

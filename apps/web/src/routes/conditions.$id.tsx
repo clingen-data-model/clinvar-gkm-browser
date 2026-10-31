@@ -5,23 +5,25 @@ import { PageTabs, pageTabClassName } from '../components/shell/PageTabs.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
 import { conditionQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
+import { useRelease } from '../lib/release.ts';
 
 /** A condition's page: the band and its tabs, with the tab's content below. */
 export const Route = createFileRoute('/conditions/$id')({
   params: idParams,
-  loader: ({ context: { queryClient }, params }) =>
+  loader: ({ context: { queryClient, release }, params }) =>
     orNotFound(
       Promise.all([
-        queryClient.query(conditionQuery(params.id)),
-        queryClient.query(vocabulariesQuery()),
+        queryClient.query(conditionQuery(release, params.id)),
+        queryClient.query(vocabulariesQuery(release)),
       ]),
     ),
   component: ConditionLayout,
 });
 
 function ConditionLayout() {
+  const release = useRelease();
   const { id } = Route.useParams();
-  const condition = useSuspenseQuery(conditionQuery(id)).data.data;
+  const condition = useSuspenseQuery(conditionQuery(release, id)).data.data;
   return (
     <Page
       eyebrow="Condition"

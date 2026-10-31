@@ -8,6 +8,7 @@ import { geneQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { GeneSearch, relationshipsOf } from '../lib/gene.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
 import { searchOf } from '../lib/route-search.ts';
+import { useRelease } from '../lib/release.ts';
 
 /** A gene's page: the band, its relationship selector and tabs, with the tab's content below. */
 export const Route = createFileRoute('/genes/$id')({
@@ -15,22 +16,27 @@ export const Route = createFileRoute('/genes/$id')({
   validateSearch: GeneSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: ({ context: { queryClient }, params, location }) =>
+  loader: ({ context: { queryClient, release }, params, location }) =>
     orNotFound(
       Promise.all([
         queryClient.query(
-          geneQuery(params.id, relationshipsOf(searchOf(GeneSearch, location).gene_relationship)),
+          geneQuery(
+            release,
+            params.id,
+            relationshipsOf(searchOf(GeneSearch, location).gene_relationship),
+          ),
         ),
-        queryClient.query(vocabulariesQuery()),
+        queryClient.query(vocabulariesQuery(release)),
       ]),
     ),
   component: GeneLayout,
 });
 
 function GeneLayout() {
+  const release = useRelease();
   const { id } = Route.useParams();
   const relationships = relationshipsOf(Route.useSearch().gene_relationship);
-  const gene = useSuspenseQuery(geneQuery(id, relationships)).data.data;
+  const gene = useSuspenseQuery(geneQuery(release, id, relationships)).data.data;
   // Tabs keep the relationship selection and drop the other tab's state.
   const keep = (s: { gene_relationship?: string | undefined }) => ({
     gene_relationship: s.gene_relationship,

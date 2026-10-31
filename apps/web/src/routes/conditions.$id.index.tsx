@@ -7,21 +7,23 @@ import { PageSearch } from '../lib/page-search.ts';
 import { orNotFound } from '../lib/route-params.ts';
 import { searchOf } from '../lib/route-search.ts';
 import { useTypeLabels } from '../lib/vocabulary.ts';
+import { useRelease } from '../lib/release.ts';
 
 export const Route = createFileRoute('/conditions/$id/')({
   validateSearch: PageSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: ({ context: { queryClient }, params, location }) =>
+  loader: ({ context: { queryClient, release }, params, location }) =>
     orNotFound(
       Promise.all([
-        queryClient.query(conditionQuery(params.id)),
+        queryClient.query(conditionQuery(release, params.id)),
         queryClient.query(
           scvListQuery(
+            release,
             scvListParams({ condition: params.id }, searchOf(PageSearch, location).page ?? 1),
           ),
         ),
-        queryClient.query(vocabulariesQuery()),
+        queryClient.query(vocabulariesQuery(release)),
       ]),
     ),
   component: ConditionOverview,
@@ -29,9 +31,10 @@ export const Route = createFileRoute('/conditions/$id/')({
 
 /** The Overview tab: classifications, and the condition's SCVs. */
 function ConditionOverview() {
+  const release = useRelease();
   const { id } = Route.useParams();
   const page = Route.useSearch().page ?? 1;
-  const condition = useSuspenseQuery(conditionQuery(id)).data.data;
+  const condition = useSuspenseQuery(conditionQuery(release, id)).data.data;
   const typeLabels = useTypeLabels();
   return (
     <>

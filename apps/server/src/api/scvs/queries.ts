@@ -1,10 +1,11 @@
 // SCV reads. Column aliases are the response's field names, so rows parse straight into the
 // shared schemas.
 
-import { ScvDetail, ScvRow } from '@cvb/shared/api';
+import { ScvDetail, ScvRow, ScvVersion } from '@cvb/shared/api';
 import { RELATIONSHIP_CODE_SQL, SqlParams, whereSql, type ParsedQuery } from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
+import { fromStart, SPAN_COLUMNS, vcvVersions } from '../variants/queries.ts';
 
 /**
  * An ScvRow's select list over `scv s` (needs SCV_ROW_JOINS), with `geneRelationship` from the
@@ -113,8 +114,14 @@ export async function scvDetail(
            {'geneId': s.gene_context_id, 'symbol': s.gene_context_symbol, 'source': s.gene_context_source}
          END AS "geneContext",
          s.submitted_gene_symbols AS "submittedGeneSymbols",
-         s.vcv_statement_id AS "vcvStatementId",
-         s.rcv_statement_id AS "rcvStatementId",
+         -- The VCV and RCV nodes citing the SCV: those with its classification type, level and tier.
+         (SELECT v.statement_id FROM vcv_statement v
+          WHERE v.variation_id = s.variation_id AND v.classification_type = s.classification_type
+            AND v.submission_level = s.submission_level AND v.tier IS NOT DISTINCT FROM s.tier) AS "vcvStatementId",
+         (SELECT r.statement_id FROM rcv_statement r
+          WHERE r.variation_id = s.variation_id AND r.rcv_accession = s.rcv_accession
+            AND r.classification_type = s.classification_type
+            AND r.submission_level = s.submission_level AND r.tier IS NOT DISTINCT FROM s.tier) AS "rcvStatementId",
          list_concat(
            CASE WHEN s.submitted_condition IS NULL THEN [] ELSE [${submittedConditionSql('s.submitted_condition')}] END,
            coalesce([${submittedConditionSql('c')} for c in s.submitted_condition_set.concepts], [])
@@ -200,4 +207,43 @@ export async function listScvs(
   }
   const [rows, n] = await Promise.all([page, total]);
   return { rows: z.array(ScvRow).parse(rows), total: n };
+}
+
+/**
+ * An SCV's versions over every release served, oldest first, each as of its last release, with
+ * the VCV versions of its variant that held at the same time.
+ */
+export async function scvVersions(
+  db: Database,
+  release: string,
+  scvId: number,
+): Promise<ScvVersion[]> {
+  const rows = await db.query(
+    release,
+    `SELECT scv_version AS version,
+            arg_max_null(variation_id, valid_from) AS "variationId",
+            arg_max_null(classification, valid_from) AS classification,
+            arg_max_null(review_status, valid_from) AS "reviewStatus",
+            arg_max_null(date_last_evaluated, valid_from)::VARCHAR AS "dateLastEvaluated",
+            ${SPAN_COLUMNS}
+     FROM ${db.rowsEver('scv')} s WHERE s.scv_id = $1
+     GROUP BY scv_version ORDER BY min(valid_from), scv_version`,
+    [scvId],
+  );
+  const versions = fromStart(
+    db,
+    ScvVersion.omit({ fromStart: true, vcvVersions: true }).array().parse(rows),
+  );
+  const vcvs = new Map<number, Awaited<ReturnType<typeof vcvVersions>>>();
+  for (const id of new Set(versions.map((v) => v.variationId))) {
+    vcvs.set(id, await vcvVersions(db, release, id));
+  }
+  const overlaps = (
+    a: { from: string; to: string | null },
+    b: { from: string; to: string | null },
+  ) => a.from < (b.to ?? '9999-12-31') && b.from < (a.to ?? '9999-12-31');
+  return versions.map((v) => ({
+    ...v,
+    vcvVersions: (vcvs.get(v.variationId) ?? []).filter((x) => overlaps(x, v)),
+  }));
 }

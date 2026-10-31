@@ -85,3 +85,12 @@ export function findReleases(dataDir: string): {
   }
   return { releases, skipped };
 }
+
+/**
+ * The release history on disk, $CLINVAR_DATA_DIR/history/<schema>/ (docs/history.md), or null.
+ * A history counts once its releases.parquet exists, the last thing history.sh writes.
+ */
+export function findHistory(dataDir: string): string | null {
+  const dir = join(dataDir, 'history', String(DERIVED_SCHEMA));
+  return existsSync(join(dir, 'releases.parquet')) ? dir : null;
+}
