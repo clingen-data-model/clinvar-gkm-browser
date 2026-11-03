@@ -5,7 +5,8 @@ import { useRelease } from '../../lib/release.ts';
 
 /**
  * The ClinVar release shown, and with more than one served, a choice of them: choosing one
- * rewinds the whole browser to it (lib/release.ts). A date between releases shows the one before.
+ * rewinds the whole browser to it (lib/release.ts). Asked for one that isn't served, it names
+ * none, as the page says (UnknownReleasePage), rather than claim the current one.
  */
 export function ReleasePicker() {
   const { data } = useQuery(releasesQuery());
@@ -17,14 +18,14 @@ export function ReleasePicker() {
     .map((r) => r.clinvarRelease)
     .sort()
     .reverse();
-  const shown = requested === undefined ? current : (dates.find((d) => d <= requested) ?? current);
+  const shown = requested === undefined ? current : dates.includes(requested) ? requested : null;
   if (dates.length < 2) {
     return (
       <span
         className="text-sm whitespace-nowrap text-muted-foreground"
         title="The ClinVar release shown"
       >
-        ClinVar {shown}
+        ClinVar {shown ?? 'release not available'}
       </span>
     );
   }
@@ -33,7 +34,7 @@ export function ReleasePicker() {
       <label htmlFor="release-picker">ClinVar</label>
       <select
         id="release-picker"
-        value={shown}
+        value={shown ?? ''}
         title="The ClinVar release shown; choose another to see the data as of it"
         className="rounded border border-border bg-background px-1 py-0.5 text-foreground"
         onChange={(event) => {
@@ -41,6 +42,11 @@ export function ReleasePicker() {
           void navigate({ to: '.', search: (prev) => ({ ...prev, release }) });
         }}
       >
+        {shown === null ? (
+          <option value="" disabled>
+            Choose a release
+          </option>
+        ) : null}
         {dates.map((d) => (
           <option key={d} value={d}>
             {d}

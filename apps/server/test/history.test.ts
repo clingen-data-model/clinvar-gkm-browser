@@ -5,7 +5,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
-import { item, ReleaseList, ScvDetail, ScvVersion, VcvVersion } from '@cvb/shared/api';
+import {
+  item,
+  ProblemDetails,
+  ReleaseList,
+  ScvDetail,
+  ScvVersion,
+  VcvVersion,
+} from '@cvb/shared/api';
 import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -171,13 +178,13 @@ describe('a release history', () => {
     expect(after.statusCode).toBe(404);
   });
 
-  it('answers a date between releases from the one before it', async () => {
-    const { body } = await get(
+  it('refuses a date between releases, naming the releases served', async () => {
+    const { status, body } = await get(
       `/api/v1/scvs/${String(CHANGED)}?release=2026-10-21`,
-      item(ScvDetail),
+      ProblemDetails,
     );
-    expect(body.release).toBe(FIXTURE_RELEASE);
-    expect(body.data.classification).toBe('Uncertain significance');
+    expect(status).toBe(404);
+    expect(body.releases).toEqual([FIXTURE_RELEASE, NEXT]);
   });
 
   it("lists a variant's VCV versions with the releases each held in", async () => {

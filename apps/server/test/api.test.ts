@@ -45,10 +45,22 @@ describe('releases', () => {
     expect(body.data.map((r) => r.clinvarRelease)).toEqual([FIXTURE_RELEASE]);
   });
 
-  it('refuses a date before every release on disk', async () => {
-    const { status, body } = await get('/api/v1/variants/10?release=2020-01-01', ProblemDetails);
-    expect(status).toBe(404);
-    expect(body.detail).toBe('No release is available on or before 2020-01-01.');
+  it('refuses a release not served, naming the releases that are', async () => {
+    for (const release of ['2020-01-01', '2030-01-01']) {
+      const { status, body } = await get(`/api/v1/variants/10?release=${release}`, ProblemDetails);
+      expect(status).toBe(404);
+      expect(body.detail).toContain(`ClinVar release ${release} isn't served.`);
+      expect(body.releases).toEqual([FIXTURE_RELEASE]);
+    }
+  });
+
+  it('answers the release named', async () => {
+    const { status, body } = await get(
+      `/api/v1/variants/10?release=${FIXTURE_RELEASE}`,
+      item(VariantDetail),
+    );
+    expect(status).toBe(200);
+    expect(body.release).toBe(FIXTURE_RELEASE);
   });
 
   it('lists versions from the one release when there is no history', async () => {
@@ -60,15 +72,6 @@ describe('releases', () => {
     expect(body.data).toEqual([
       expect.objectContaining({ from: FIXTURE_RELEASE, to: null, fromStart: true }),
     ]);
-  });
-
-  it('answers a later date from the latest release on or before it', async () => {
-    const { status, body } = await get(
-      '/api/v1/variants/10?release=2030-01-01',
-      item(VariantDetail),
-    );
-    expect(status).toBe(200);
-    expect(body.release).toBe(FIXTURE_RELEASE);
   });
 });
 

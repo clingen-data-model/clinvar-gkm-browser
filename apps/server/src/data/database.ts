@@ -10,10 +10,15 @@ import { DERIVED_SCHEMA, type ReleaseOnDisk, type SkippedRelease } from './relea
 
 export type Row = Record<string, unknown>;
 
+/** A release that isn't served, with the releases that are (oldest first) for the response. */
 export class UnknownReleaseError extends Error {
   readonly statusCode = 404;
-  constructor(release: string) {
-    super(`No release is available on or before ${release}.`);
+  readonly releases: string[];
+  constructor(release: string, releases: string[]) {
+    super(
+      `ClinVar release ${release} isn't served. The releases served are in \`releases\`, and GET /api/v1/releases lists them.`,
+    );
+    this.releases = releases;
   }
 }
 
@@ -318,27 +323,26 @@ export class Database {
   }
 
   /**
-   * The release a request asked for, or the current one. A date between releases means the data
-   * as of that date: the latest release on or before it. Throws if there is none.
+   * The release a request asked for, or the current one. Only a release served answers: data
+   * read as of one release but labelled with another date would mislead (docs/api.md).
    */
   resolve(requested: string | undefined): string {
     if (requested !== undefined) {
       if (this.releases.has(requested)) return requested;
-      const onOrBefore = [...this.releases.keys()]
-        .filter((date) => date <= requested)
-        .sort()
-        .at(-1);
-      if (onOrBefore === undefined) throw new UnknownReleaseError(requested);
-      return onOrBefore;
+      throw new UnknownReleaseError(requested, this.dates());
     }
     if (this.current === null) throw new NoDataError();
     return this.current;
   }
 
+  private dates(): string[] {
+    return [...this.releases.keys()].sort();
+  }
+
   /** Runs one statement against a release, with positional parameters ($1, $2, ...). */
   async query(release: string, sql: string, params: DuckDBValue[] = []): Promise<Row[]> {
     const served = this.releases.get(release);
-    if (served === undefined) throw new UnknownReleaseError(release);
+    if (served === undefined) throw new UnknownReleaseError(release, this.dates());
     const connection = await this.instance.connect();
     const timer = setTimeout(() => {
       connection.interrupt();

@@ -21,6 +21,15 @@ function statusOf(error: unknown): number | undefined {
   return typeof error.statusCode === 'number' ? error.statusCode : undefined;
 }
 
+/** The releases served, on an error for a release that isn't (data/database.ts). */
+function releasesOf(error: unknown): string[] | undefined {
+  if (typeof error !== 'object' || error === null || !('releases' in error)) return undefined;
+  const { releases } = error;
+  return Array.isArray(releases) && releases.every((r) => typeof r === 'string')
+    ? releases
+    : undefined;
+}
+
 /** Answers a not-found request with a page, or returns undefined to answer with a problem. */
 export type PageNotFound = (
   request: FastifyRequest,
@@ -46,7 +55,11 @@ export function registerErrorHandling(app: FastifyInstance, pageNotFound?: PageN
     const status = statusOf(error);
     // 4xx, and 503 for the expected unavailable states (no data yet, a query timed out).
     if (status !== undefined && ((status >= 400 && status < 500) || status === 503)) {
-      return sendProblem(reply, problem(status, error instanceof Error ? error.message : ''));
+      const releases = releasesOf(error);
+      return sendProblem(reply, {
+        ...problem(status, error instanceof Error ? error.message : ''),
+        ...(releases === undefined ? {} : { releases }),
+      });
     }
     request.log.error({ err: error }, 'unhandled error');
     return sendProblem(reply, problem(500, 'Internal server error.'));

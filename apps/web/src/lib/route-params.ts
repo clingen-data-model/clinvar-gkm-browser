@@ -11,12 +11,17 @@ export const idParams = {
   stringify: ({ id }: { id: number }) => ({ id: String(id) }),
 };
 
-/** Turns an API 404 into the router's not-found page; other errors go to the error page. */
+/**
+ * Turns an API 404 into the router's not-found page; other errors go to the error page, including
+ * a release that isn't served, which ErrorPage explains.
+ */
 export async function orNotFound<T>(load: Promise<T>): Promise<T> {
   try {
     return await load;
   } catch (error) {
-    if (error instanceof ApiError && error.status === 404) throw notFound();
+    if (error instanceof ApiError && error.status === 404 && error.releases === undefined) {
+      throw notFound();
+    }
     throw error;
   }
 }

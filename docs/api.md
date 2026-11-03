@@ -47,7 +47,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 
 | Filter | Applies to | Meaning |
 | --- | --- | --- |
-| `release` | all | ClinVar release date; default latest. A date between releases means the data as of that date, the latest release on or before it; the response's `release` says which |
+| `release` | all | ClinVar release date, one of those served (`GET /releases`); default latest. Any other date is a 404 whose problem JSON lists the releases served in `releases` ([history.md](history.md#in-the-app)) |
 | `variant` | SCVs, variants | variation ID |
 | `gene` | SCVs, variants | NCBI gene ID, through the variant's gene list |
 | `gene_relationship` | SCVs, variants | which relationships to the gene count, any of `single`, `overlap`, `spanning`, `near`, `asserted` (default `single,overlap`; see open question 2) |
@@ -165,7 +165,7 @@ Present in local mode, absent or behind authentication when hosted:
 
 ## Errors and limits
 
-- **Errors use RFC 9457 problem JSON,** with the offending parameter named: unknown filter, bad value, unknown release, a dimension a resource doesn't support.
+- **Errors use RFC 9457 problem JSON,** with the offending parameter named: unknown filter, bad value, unknown release, a dimension a resource doesn't support. An unknown release's 404 adds `releases`, the releases served, oldest first.
 - **Every query has a timeout** (default 30 s locally) and is cancelled when the client disconnects.
 - **Releases are immutable,** so responses carry `ETag` and `Cache-Control` keyed on the release. The browser and any proxy can cache them.
 
