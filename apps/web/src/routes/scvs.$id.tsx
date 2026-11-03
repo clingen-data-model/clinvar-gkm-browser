@@ -13,6 +13,8 @@ import { useRelease } from '../lib/release.ts';
 
 export const Route = createFileRoute('/scvs/$id')({
   params: idParams,
+  // The release isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
   loader: ({ context: { queryClient, release }, params }) =>
     orNotFound(
       Promise.all([

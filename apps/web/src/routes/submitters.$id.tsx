@@ -14,6 +14,8 @@ import { useRelease } from '../lib/release.ts';
 /** A submitter's page: the band and its tabs, with the tab's content below. */
 export const Route = createFileRoute('/submitters/$id')({
   params: idParams,
+  // The release isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
   loader: ({ context: { queryClient, release }, params }) =>
     orNotFound(
       Promise.all([

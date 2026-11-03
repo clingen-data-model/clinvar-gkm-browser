@@ -9,6 +9,8 @@ import { useRelease } from '../lib/release.ts';
 export const Route = createFileRoute('/search')({
   validateSearch: z.object({ q: z.string().catch('') }),
   loaderDeps: ({ search }) => ({ q: search.q.trim() }),
+  // The release isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
   loader: async ({ context, deps }) => {
     if (deps.q === '') return;
     const found = await context.queryClient.query(searchQuery(context.release, deps.q));
