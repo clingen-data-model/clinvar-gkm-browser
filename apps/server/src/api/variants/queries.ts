@@ -1,8 +1,7 @@
 // Variant reads. The detail is assembled from a few small queries, each reading only the rows
 // of one variant (the tables are sorted by variation_id).
 
-import type {
-  VcvVersion} from '@cvb/shared/api';
+import type { VcvVersion } from '@cvb/shared/api';
 import {
   AggregateStatement,
   VariantDetail,

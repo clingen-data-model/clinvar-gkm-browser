@@ -1,6 +1,6 @@
-// The query engine: one in-memory DuckDB instance with a schema of views per derived release,
-// each view reading one parquet file. A query names its release and runs on its own connection
-// with that schema on the search path, under a timeout.
+// The query engine: one in-memory DuckDB instance with a schema of views per release, reading a
+// derived release's parquet files or a release history's. A query names its release and runs on
+// its own connection with that schema on the search path, under a timeout.
 
 import { mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -40,9 +40,18 @@ export interface DatabaseOptions {
   pinnedRelease: string | null;
 }
 
-/** Schema name for a release: 2026-10-18 -> r2026_10_18. */
-function schemaName(release: string): string {
-  return `r${release.replaceAll('-', '_')}`;
+/**
+ * Schema name for a release: 2026-10-18 -> r2026_10_18 for a derived release, h2026_10_18 as read
+ * from a history, so loading a history never touches a derived release's views.
+ */
+function schemaName(release: string, from: 'r' | 'h'): string {
+  return `${from}${release.replaceAll('-', '_')}`;
+}
+
+/** A release served, and the schema its views are in. */
+interface Served {
+  onDisk: ReleaseOnDisk;
+  schema: string;
 }
 
 function sqlString(value: string): string {
@@ -69,7 +78,7 @@ function files(dir: string, kind: 'added' | 'closed', table: string): string {
 }
 
 export class Database {
-  private readonly releases = new Map<string, ReleaseOnDisk>();
+  private readonly releases = new Map<string, Served>();
   private current: string | null = null;
   private history = false;
   private readonly instance: DuckDBInstance;
@@ -120,7 +129,7 @@ export class Database {
   /** Registers a release's views. Called at startup, and when a new release is derived. */
   async addRelease(onDisk: ReleaseOnDisk): Promise<void> {
     const date = onDisk.release.clinvarRelease;
-    const schema = schemaName(date);
+    const schema = schemaName(date, 'r');
     const connection = await this.instance.connect();
     try {
       await connection.run(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
@@ -137,17 +146,23 @@ export class Database {
     } finally {
       connection.closeSync();
     }
-    this.releases.set(date, onDisk);
+    this.releases.set(date, { onDisk, schema });
     this.current = this.pickCurrent();
   }
 
   /**
    * Registers every release in a release history (docs/history.md): for each, a schema whose views
    * read each table's rows as of that release from the history's files. A release here replaces a
-   * derived release of the same date.
+   * derived release of the same date. Called once, at startup.
+   *
+   * All of it is built beside what's served and swapped in only once every part has loaded; if
+   * any part fails, what was built is dropped and the derived releases are served as before.
    */
   async addHistory(dir: string): Promise<void> {
+    if (this.history) throw new Error('a release history is already loaded');
     const connection = await this.instance.connect();
+    const built = new Map<string, Served>();
+    const created: string[] = [];
     try {
       const releases = HistoryRelease.array().parse(
         (
@@ -179,47 +194,52 @@ export class Database {
         .map((f) => f.replace(/\.parquet$/, ''))
         .filter(isIdentifier)
         .sort();
+      // Only the releases listed count. scripts/history.sh lists a release once its files are in,
+      // so files of one being applied, or left by a failed apply, are of releases after the last.
+      const last = releases.at(-1)?.release;
+      if (last === undefined) throw new Error('the release history lists no releases');
 
       for (const r of releases) {
         const date = r.release;
-        const schema = schemaName(date);
-        try {
-          await connection.run(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-          await connection.run(`CREATE SCHEMA ${schema}`);
-          for (const { name, key } of tables) {
-            const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
-            await connection.run(
-              `CREATE VIEW ${schema}.${name} AS
-               SELECT a.* EXCLUDE (release) FROM ${files(dir, 'added', name)} a
-               ANTI JOIN ${files(dir, 'closed', name)} c
-                 ON ${on} AND c.valid_from = a.release AND c.release <= DATE '${date}'
-               WHERE a.release <= DATE '${date}'`,
-            );
-          }
-          for (const name of plain) {
-            await connection.run(
-              `CREATE VIEW ${schema}.${name} AS FROM read_parquet(${sqlString(join(dir, 'plain', `${name}.parquet`))})`,
-            );
-          }
+        const schema = schemaName(date, 'h');
+        await connection.run(`CREATE SCHEMA ${schema}`);
+        created.push(schema);
+        for (const { name, key } of tables) {
+          const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
           await connection.run(
-            `CREATE VIEW ${schema}.release AS
-             SELECT release AS clinvar_release, build_date AS parquet_build_date, schema_version AS gkm_schema_version,
-                    dataset AS gkm_dataset, ${DERIVED_SCHEMA} AS derived_schema, applied_at AS loaded_at
-             FROM read_parquet(${sqlString(join(dir, 'releases.parquet'))}) WHERE release = DATE '${date}'`,
+            `CREATE VIEW ${schema}.${name} AS
+             SELECT a.* EXCLUDE (release) FROM ${files(dir, 'added', name)} a
+             ANTI JOIN ${files(dir, 'closed', name)} c
+               ON ${on} AND c.valid_from = a.release AND c.release <= DATE '${date}'
+             WHERE a.release <= DATE '${date}'`,
           );
-          const counts = z
-            .object({ name: z.string(), rows: z.coerce.number().int() })
-            .array()
-            .parse(
-              (
-                await connection.runAndReadAll(
-                  [...tables.map((t) => t.name), ...plain, 'release']
-                    .map((name) => `SELECT '${name}' AS name, count(*) AS rows FROM ${schema}.${name}`)
-                    .join(' UNION ALL ') + ' ORDER BY name',
-                )
-              ).getRowObjectsJson(),
-            );
-          this.releases.set(date, {
+        }
+        for (const name of plain) {
+          await connection.run(
+            `CREATE VIEW ${schema}.${name} AS FROM read_parquet(${sqlString(join(dir, 'plain', `${name}.parquet`))})`,
+          );
+        }
+        await connection.run(
+          `CREATE VIEW ${schema}.release AS
+           SELECT release AS clinvar_release, build_date AS parquet_build_date, schema_version AS gkm_schema_version,
+                  dataset AS gkm_dataset, ${DERIVED_SCHEMA} AS derived_schema, applied_at AS loaded_at
+           FROM read_parquet(${sqlString(join(dir, 'releases.parquet'))}) WHERE release = DATE '${date}'`,
+        );
+        const counts = z
+          .object({ name: z.string(), rows: z.coerce.number().int() })
+          .array()
+          .parse(
+            (
+              await connection.runAndReadAll(
+                [...tables.map((t) => t.name), ...plain, 'release']
+                  .map((name) => `SELECT '${name}' AS name, count(*) AS rows FROM ${schema}.${name}`)
+                  .join(' UNION ALL ') + ' ORDER BY name',
+              )
+            ).getRowObjectsJson(),
+          );
+        built.set(date, {
+          schema,
+          onDisk: {
             dir,
             release: {
               clinvarRelease: date,
@@ -230,29 +250,31 @@ export class Database {
               loadedAt: r.applied_at,
               tables: counts,
             },
-          });
-        } catch (error) {
-          await connection.run(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-          this.releases.delete(date);
-          throw error;
-        }
+          },
+        });
       }
       // Every row ever, with the releases it held in: the versions of a record.
-      await connection.run('DROP SCHEMA IF EXISTS history CASCADE');
       await connection.run('CREATE SCHEMA history');
+      created.push('history');
       for (const { name, key } of tables) {
         const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
         await connection.run(
           `CREATE VIEW history.${name} AS
            SELECT a.* EXCLUDE (release), a.release AS valid_from, c.release AS valid_to
            FROM ${files(dir, 'added', name)} a
-           LEFT JOIN ${files(dir, 'closed', name)} c ON ${on} AND c.valid_from = a.release`,
+           LEFT JOIN ${files(dir, 'closed', name)} c
+             ON ${on} AND c.valid_from = a.release AND c.release <= DATE '${last}'
+           WHERE a.release <= DATE '${last}'`,
         );
       }
-      this.history = true;
+    } catch (error) {
+      for (const schema of created) await connection.run(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      throw error;
     } finally {
       connection.closeSync();
     }
+    for (const [date, served] of built) this.releases.set(date, served);
+    this.history = true;
     this.current = this.pickCurrent();
   }
 
@@ -289,9 +311,9 @@ export class Database {
 
   /** Releases available, oldest first, and the one served by default. */
   available(): { current: string | null; releases: ReleaseOnDisk[] } {
-    const releases = [...this.releases.values()].sort((a, b) =>
-      a.release.clinvarRelease.localeCompare(b.release.clinvarRelease),
-    );
+    const releases = [...this.releases.values()]
+      .map((served) => served.onDisk)
+      .sort((a, b) => a.release.clinvarRelease.localeCompare(b.release.clinvarRelease));
     return { current: this.current, releases };
   }
 
@@ -315,12 +337,14 @@ export class Database {
 
   /** Runs one statement against a release, with positional parameters ($1, $2, ...). */
   async query(release: string, sql: string, params: DuckDBValue[] = []): Promise<Row[]> {
+    const served = this.releases.get(release);
+    if (served === undefined) throw new UnknownReleaseError(release);
     const connection = await this.instance.connect();
     const timer = setTimeout(() => {
       connection.interrupt();
     }, this.options.queryTimeoutMs);
     try {
-      await connection.run(`SET search_path = ${sqlString(schemaName(release))}`);
+      await connection.run(`SET search_path = ${sqlString(served.schema)}`);
       const reader = await connection.runAndReadAll(sql, params);
       return reader.getRowObjectsJson();
     } catch (error) {

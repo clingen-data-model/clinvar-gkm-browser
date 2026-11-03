@@ -1,7 +1,7 @@
 // The server over a release history (docs/history.md): a two-release history built from the
 // fixture release in history.sh's layout, read as of each release.
 
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
@@ -10,7 +10,7 @@ import pino from 'pino';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { Database } from '../src/data/database.ts';
-import { DERIVED_SCHEMA, findHistory } from '../src/data/releases.ts';
+import { DERIVED_SCHEMA, findHistory, findReleases } from '../src/data/releases.ts';
 import { buildServer } from '../src/server.ts';
 import { FIXTURE_DIR, FIXTURE_RELEASE } from './helpers.ts';
 
@@ -54,7 +54,8 @@ const TABLES: Record<string, string[]> = {
 };
 const PLAIN = ['classification_type', 'classification_term', 'submission_level', 'review_status'];
 
-async function writeHistory(dataDir: string): Promise<void> {
+/** Writes both releases' files; releases.parquet lists only `listed`, as if the rest weren't applied. */
+async function writeHistory(dataDir: string, listed = [FIXTURE_RELEASE, NEXT]): Promise<void> {
   const source = join(FIXTURE_DIR, 'derived', String(DERIVED_SCHEMA), FIXTURE_RELEASE);
   const dir = join(dataDir, 'history', String(DERIVED_SCHEMA));
   const part = (kind: string, table: string, release: string) =>
@@ -85,7 +86,8 @@ async function writeHistory(dataDir: string): Promise<void> {
   statements.push(
     `COPY (SELECT * FROM (VALUES (DATE '${FIXTURE_RELEASE}', 'bundle', 'base.json.gz', '2026-10-22', '1.1.0', TIMESTAMP '2026-10-30 00:00:00'),
                                  (DATE '${NEXT}', 'delta', 'delta.json.gz', '2026-10-27', '1.1.0', TIMESTAMP '2026-10-30 00:01:00'))
-            t(release, origin, dataset, build_date, schema_version, applied_at))
+            t(release, origin, dataset, build_date, schema_version, applied_at)
+          WHERE strftime(release, '%Y-%m-%d') IN (${listed.map((r) => `'${r}'`).join(', ')}))
        TO '${join(dir, 'releases.parquet')}' (FORMAT parquet)`,
   );
   for (const table of Object.keys(TABLES)) {
@@ -212,5 +214,69 @@ describe('a release history', () => {
       z.object({ data: z.array(ScvVersion) }),
     );
     expect(deleted.body.data.map((v) => v.to)).toEqual([NEXT]);
+  });
+});
+
+describe('a release still being applied', () => {
+  let partial: Awaited<ReturnType<typeof buildServer>>;
+  let partialDb: Database;
+
+  beforeAll(async () => {
+    // NEXT's files are in, but it isn't listed yet: scripts/history.sh lists a release last.
+    const dataDir = mkdtempSync(join(tmpdir(), 'cvb-history-'));
+    await writeHistory(dataDir, [FIXTURE_RELEASE]);
+    partialDb = await Database.open(
+      { dataDir, memoryLimit: '1GB', threads: 2, queryTimeoutMs: 10_000, pinnedRelease: null },
+      [],
+    );
+    const history = findHistory(dataDir);
+    if (history === null) throw new Error('no history written');
+    await partialDb.addHistory(history);
+    partial = await buildServer({
+      db: partialDb,
+      logger: pino({ level: 'silent' }),
+      allowedHosts: ['localhost'],
+    });
+  });
+
+  afterAll(async () => {
+    await partial.close();
+    partialDb.close();
+  });
+
+  it('counts for nothing until it is listed', async () => {
+    const response = await partial.inject({
+      url: `/api/v1/variants/${String(VARIANT)}/versions`,
+      headers: { host: 'localhost' },
+    });
+    const versions = z.object({ data: z.array(VcvVersion) }).parse(response.json()).data;
+    expect(versions.map((v) => [v.from, v.to])).toEqual([[FIXTURE_RELEASE, null]]);
+  });
+});
+
+describe('a release history that fails to load', () => {
+  it('leaves the derived releases served as they were', async () => {
+    // The history's first release is the fixture's date, so it would replace the derived one.
+    const dataDir = mkdtempSync(join(tmpdir(), 'cvb-history-'));
+    await writeHistory(dataDir);
+    const history = findHistory(dataDir);
+    if (history === null) throw new Error('no history written');
+    writeFileSync(join(history, 'added', 'scv', `release=${NEXT}`, 'data.parquet'), 'not parquet');
+    const derived = findReleases(FIXTURE_DIR).releases;
+    const broken = await Database.open(
+      { dataDir, memoryLimit: '1GB', threads: 2, queryTimeoutMs: 10_000, pinnedRelease: null },
+      derived,
+    );
+    try {
+      await expect(broken.addHistory(history)).rejects.toThrow();
+      expect(broken.hasHistory).toBe(false);
+      const { current, releases } = broken.available();
+      expect(current).toBe(FIXTURE_RELEASE);
+      expect(releases.map((r) => r.dir)).toEqual(derived.map((r) => r.dir));
+      const [row] = await broken.query(FIXTURE_RELEASE, 'SELECT count(*) AS n FROM scv');
+      expect(Number(row?.['n'])).toBeGreaterThan(0);
+    } finally {
+      broken.close();
+    }
   });
 });
