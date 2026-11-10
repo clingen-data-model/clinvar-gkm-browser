@@ -1,3 +1,5 @@
-# The data image's build context: the derived releases only.
+# The data image's build context: the derived releases and the derived release history. The
+# history's log of upstream's records (data/history/log) isn't served, so it stays out.
 **
 !data/derived/**
+!data/history/1/**

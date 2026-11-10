@@ -13,7 +13,7 @@ The upstream download is 12 GB and deriving it takes minutes and several GB of m
 
 Two images, so a code change never re-sends the data:
 
-- **The data image** (`deploy/data.Dockerfile`): Node plus one derived release, about 2.4 GB, tagged `<release>-<derived>` (when the release was derived). Built and pushed once per derivation, so re-deriving a release (a new table, say) makes a new one.
+- **The data image** (`deploy/data.Dockerfile`): Node plus one derived release, about 2.4 GB, tagged `<release>-<derived>` (when the release was derived), or the release history ([below](#the-release-history)). Built and pushed once per derivation, so re-deriving a release (a new table, say) makes a new one.
 - **The app image** (`deploy/Dockerfile`): built on the data image, adding the server's dependencies (about 100 MB) and the code and web app (under 1 MB). The registry already has the data image's layers, so pushing an app image uploads only these.
 
 Startup takes seconds: nothing to download, nothing to derive.
@@ -23,6 +23,14 @@ Startup takes seconds: nothing to download, nothing to derive.
 2. **Check locally:** `podman run --rm -p 127.0.0.1:8080:8080 <app image>`, then open http://localhost:8080.
 3. **Push** with `scripts/build-image.sh --push` (from a clean, committed tree).
 4. **Deploy** the pushed app image to the Cloud Run service (below).
+
+### The release history
+
+`scripts/build-image.sh --history` builds the data image from the derived release history ([history.md](history.md)) instead of one derived release, so the service serves every release in it, with the release picker and the version and field history. The image holds `data/history/1/` only: 2.0 GB for 19 releases. The log of upstream's records (`data/history/log/`, 4.3 GB) is what the history is rebuilt from, and the server never reads it, so it stays on the build machine.
+
+- **Tags:** `clinvar-gkm-data:history-<last release>-<written>`, where `<written>` is when the history's `releases.parquet` was last written (every `apply` and `rebuild` writes it), and `clinvar-gkm-browser:history-<last release>-<commit>`.
+- **Before building,** bring the history up to upstream's latest delta (`scripts/backfill-history.sh 2026-07`, which resumes from the log's last release) and run `scripts/history.sh check <release>` on the release added. The script refuses to build while the history holds files of a release it doesn't list yet (an apply running or failed).
+- **Startup** registers every release and counts its rows before the server listens: about 9 s for 18 releases natively. It's to be measured on Cloud Run, where the image's files are fetched on first read.
 
 ### The dev service (us-east1)
 
