@@ -112,6 +112,10 @@ export class Database {
       // Never fetch extensions at run time: offline and in a locked-down container that fails.
       autoinstall_known_extensions: 'false',
       autoload_known_extensions: 'false',
+      // A query naming a table twice (a list's page, then its rows) over a release history's
+      // views would compute the view once, in full, for both: every SCV, 4.3 GB for one gene's
+      // list. Planned apart, each filter reaches its own scan (docs/history.md#in-the-app).
+      disabled_optimizers: 'common_subplan',
     });
     // Keep parquet footers in memory between queries; a global setting, so set once.
     const connection = await instance.connect();

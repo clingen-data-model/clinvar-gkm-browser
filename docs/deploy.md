@@ -30,7 +30,8 @@ Startup takes seconds: nothing to download, nothing to derive.
 
 - **Tags:** `clinvar-gkm-data:history-<last release>-<written>`, where `<written>` is when the history's `releases.parquet` was last written (every `apply` and `rebuild` writes it), and `clinvar-gkm-browser:history-<last release>-<commit>`.
 - **Before building,** bring the history up to upstream's latest delta (`scripts/backfill-history.sh 2026-07`, which resumes from the log's last release) and run `scripts/history.sh check <release>` on the release added. The script refuses to build while the history holds files of a release it doesn't list yet (an apply running or failed).
-- **Startup** registers every release and counts its rows before the server listens: about 9 s for 18 releases natively. It's to be measured on Cloud Run, where the image's files are fetched on first read.
+- **Startup** registers every release and counts its rows before the server listens: about 9 s for 18 releases natively, 27 s for 19 in podman on the development Mac. It's to be measured on Cloud Run, where the image's files are fetched on first read.
+- **Checked locally 10 November 2026** (arm64 image, podman with 4 GiB, `DUCKDB_THREADS=4`, `DUCKDB_MEMORY_LIMIT=2GB`): requests take up to twice as long as natively; 13 heavy requests at once (ten genes' SCV lists with counts, three genes' pair summaries) all answered in 2.0 to 2.4 s, and memory peaked at 1.2 GB. Before DuckDB's `common_subplan` optimizer was turned off, one of those lists alone ran the container out of memory ([history.md](history.md#in-the-app)).
 
 ### The dev service (us-east1)
 
