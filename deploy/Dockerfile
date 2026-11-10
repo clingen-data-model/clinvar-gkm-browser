@@ -23,6 +23,8 @@ COPY packages/shared/package.json packages/shared/
 RUN pnpm install --frozen-lockfile --filter @cvb/web...
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+# The /schema page draws its diagrams from this doc at build time.
+COPY docs/upstream-vs-derived.md docs/
 RUN pnpm --filter @cvb/web build
 
 # The server's production dependencies, for the target platform (DuckDB's binding is native).
