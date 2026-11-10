@@ -5,7 +5,8 @@ import { ScvDetail, ScvRow, ScvVersion } from '@cvb/shared/api';
 import { RELATIONSHIP_CODE_SQL, SqlParams, whereSql, type ParsedQuery } from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
-import { fromStart, SPAN_COLUMNS, vcvVersions } from '../variants/queries.ts';
+import { fromStart, SPAN_COLUMNS } from '../history/queries.ts';
+import { vcvVersions } from '../variants/queries.ts';
 
 /**
  * An ScvRow's select list over `scv s` (needs SCV_ROW_JOINS), with `geneRelationship` from the

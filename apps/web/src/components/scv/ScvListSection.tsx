@@ -23,7 +23,7 @@ export function ScvListSection({ filters, page }: { filters: Params; page: numbe
       <h2 id="scvs" className="mb-3">
         Submissions <span className="text-muted-foreground">({total.toLocaleString()})</span>
       </h2>
-      <ScvTable rows={data.data} showVariant typeLabels={typeLabels} />
+      <ScvTable rows={data.data} showVariant shown={data.release} typeLabels={typeLabels} />
       <nav aria-label="Pages" className="mt-4 flex items-center gap-4 text-sm">
         {page > 1 ? (
           <Link to="." search={(s) => ({ ...s, page: String(page - 1) })}>

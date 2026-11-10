@@ -4,6 +4,7 @@ import {
   ProblemDetails,
   ReleaseList,
   ScvDetail,
+  ScvHistory,
   ScvRow,
   SubmitterDetail,
   VariantDetail,
@@ -61,6 +62,22 @@ describe('releases', () => {
     );
     expect(status).toBe(200);
     expect(body.release).toBe(FIXTURE_RELEASE);
+  });
+
+  it('gives one period per field from the one release when there is no history', async () => {
+    const { status, body } = await get(
+      '/api/v1/scvs/history?ids=198337',
+      z.object({ data: z.array(ScvHistory) }),
+    );
+    expect(status).toBe(200);
+    expect(body.data).toEqual([
+      {
+        scvId: 198337,
+        classification: [
+          { value: 'Uncertain significance', from: FIXTURE_RELEASE, to: null, fromStart: true },
+        ],
+      },
+    ]);
   });
 
   it('lists versions from the one release when there is no history', async () => {

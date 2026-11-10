@@ -2,11 +2,13 @@
 // (which read with useSuspenseQuery). A release's data never changes, so it never goes stale.
 
 import {
+  AggregateHistory,
   ConditionDetail,
   GeneDetail,
   PairRow,
   ReleaseList,
   ScvDetail,
+  ScvHistory,
   ScvRow,
   ScvVersion,
   SearchResponse,
@@ -162,5 +164,28 @@ export const scvVersionsQuery = (id: number) =>
         `/scvs/${String(id)}/versions`,
         z.object({ release: z.iso.date(), data: z.array(ScvVersion) }),
       ),
+    staleTime: 60_000,
+  });
+
+// Field history spans every release served too: the periods each value held in.
+export const variantHistoryQuery = (id: number) =>
+  queryOptions({
+    queryKey: ['variant', id, 'history'],
+    queryFn: () =>
+      getJson(
+        `/variants/${String(id)}/history`,
+        z.object({ release: z.iso.date(), data: z.array(AggregateHistory) }),
+      ),
+    staleTime: 60_000,
+  });
+
+/** The classification history of the SCVs named: at most 500, one page of a list. */
+export const scvHistoryQuery = (ids: readonly number[]) =>
+  queryOptions({
+    queryKey: ['scvs', 'history', ids],
+    queryFn: () =>
+      getJson('/scvs/history', z.object({ release: z.iso.date(), data: z.array(ScvHistory) }), {
+        ids: ids.join(','),
+      }),
     staleTime: 60_000,
   });

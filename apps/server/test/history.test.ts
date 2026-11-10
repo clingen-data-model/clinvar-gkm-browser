@@ -6,10 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DuckDBInstance } from '@duckdb/node-api';
 import {
+  AggregateHistory,
   item,
   ProblemDetails,
   ReleaseList,
   ScvDetail,
+  ScvHistory,
   ScvVersion,
   VcvVersion,
 } from '@cvb/shared/api';
@@ -25,12 +27,19 @@ const NEXT = '2026-10-25';
 const VARIANT = 10;
 const CHANGED = 198337; // on VARIANT, a new version reclassifying it in NEXT
 const DELETED = 20169; // on VARIANT, gone in NEXT
+const PATH_ROOT = 'VCV000000010.141-G-PATH'; // VARIANT's aggregate PATH call, reclassified in NEXT
 // What NEXT changes: rows replaced (with the new values) and rows closed.
 const NEXT_CHANGES: Partial<Record<string, { where: string; replace: string; closes: string }>> = {
   scv: {
     where: `scv_id = ${String(CHANGED)}`,
     replace: `scv_version + 1 AS scv_version, 'Benign' AS classification`,
     closes: `scv_id IN (${String(CHANGED)}, ${String(DELETED)})`,
+  },
+  // A new VCV version names its statements anew: the PATH root under another ID, reclassified.
+  vcv_statement: {
+    where: `statement_id = '${PATH_ROOT}'`,
+    replace: `'${PATH_ROOT.replace('.141-', '.142-')}' AS statement_id, 'Pathogenic/Likely pathogenic' AS classification`,
+    closes: `statement_id = '${PATH_ROOT}'`,
   },
   variant: {
     where: `variation_id = ${String(VARIANT)}`,
@@ -221,6 +230,58 @@ describe('a release history', () => {
       z.object({ data: z.array(ScvVersion) }),
     );
     expect(deleted.body.data.map((v) => v.to)).toEqual([NEXT]);
+  });
+});
+
+describe('field history', () => {
+  it("gives a variant's aggregate classification and review status as periods, per type", async () => {
+    const { body } = await get(
+      `/api/v1/variants/${String(VARIANT)}/history`,
+      z.object({ data: z.array(AggregateHistory) }),
+    );
+    expect(body.data.map((h) => h.classificationType)).toEqual(['NP', 'OTH', 'PATH', 'RF']);
+    const path = body.data.find((h) => h.classificationType === 'PATH');
+    // Found by its columns, so the root's new statement ID continues the same field.
+    expect(path?.classification.map((p) => [p.value, p.from, p.to, p.fromStart])).toEqual([
+      ['Conflicting classifications of pathogenicity', FIXTURE_RELEASE, NEXT, true],
+      ['Pathogenic/Likely pathogenic', NEXT, null, false],
+    ]);
+    expect(path?.reviewStatus.map((p) => [p.value, p.from, p.to])).toEqual([
+      ['criteria provided, conflicting classifications', FIXTURE_RELEASE, null],
+    ]);
+  });
+
+  it("gives each SCV's classification as periods, leaving out SCVs never served", async () => {
+    const { status, body } = await get(
+      `/api/v1/scvs/history?ids=${String(CHANGED)},${String(DELETED)},999999999`,
+      z.object({ data: z.array(ScvHistory) }),
+    );
+    expect(status).toBe(200);
+    const byId = new Map(body.data.map((h) => [h.scvId, h.classification]));
+    expect([...byId.keys()].sort()).toEqual([CHANGED, DELETED].sort());
+    expect(byId.get(CHANGED)?.map((p) => [p.value, p.from, p.to])).toEqual([
+      ['Uncertain significance', FIXTURE_RELEASE, NEXT],
+      ['Benign', NEXT, null],
+    ]);
+    expect(byId.get(DELETED)?.map((p) => [p.value, p.from, p.to])).toEqual([
+      ['not provided', FIXTURE_RELEASE, NEXT],
+    ]);
+  });
+
+  it('refuses ids that are not a list of SCV IDs', async () => {
+    for (const ids of [
+      '',
+      'abc',
+      '1,,2',
+      '0',
+      Array.from({ length: 501 }, (_, i) => i + 1).join(','),
+    ]) {
+      const response = await server.inject({
+        url: `/api/v1/scvs/history?ids=${ids}`,
+        headers: { host: 'localhost' },
+      });
+      expect(response.statusCode, ids.slice(0, 20)).toBe(400);
+    }
   });
 });
 

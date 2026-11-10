@@ -1,19 +1,41 @@
-import type { ScvRow } from '@cvb/shared/api';
+import type { FieldPeriod, ScvRow } from '@cvb/shared/api';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
+import { scvHistoryQuery } from '../../lib/api/queries.ts';
 import { Stars } from '../classification/Stars.tsx';
 import { TermPill } from '../classification/TermPill.tsx';
+import { FieldHistory, periodRelease } from '../history/FieldHistory.tsx';
 import { RelationshipMarker } from './RelationshipMarker.tsx';
 
 interface Props {
   rows: ScvRow[];
   /** Hide the variant column on a variant's own page. */
   showVariant?: boolean;
+  /** The release the rows are from. */
+  shown: string;
   typeLabels: Map<string, string>;
 }
 
-/** Submissions, grouped by classification type, with comments expandable under each row. */
-export function ScvTable({ rows, showVariant = false, typeLabels }: Props) {
+/**
+ * Submissions, grouped by classification type, with comments expandable under each row. A
+ * classification that changed offers the values it held, once their history arrives; until then
+ * the table shows as of its release alone.
+ */
+export function ScvTable({ rows, showVariant = false, shown, typeLabels }: Props) {
+  const ids = rows.map((r) => r.scvId).sort((a, b) => a - b);
+  const { data: history } = useQuery({ ...scvHistoryQuery(ids), enabled: ids.length > 0 });
+  const periodsOf = new Map(history?.data.map((h) => [h.scvId, h.classification]));
+  const link = (scvId: number) => (period: FieldPeriod, text: ReactNode, close: () => void) => (
+    <Link
+      to="/scvs/$id"
+      params={{ id: scvId }}
+      search={(prev) => ({ ...prev, release: periodRelease(period) })}
+      onClick={close}
+    >
+      {text}
+    </Link>
+  );
   const groups = new Map<string, ScvRow[]>();
   for (const r of rows)
     groups.set(r.classificationType, [...(groups.get(r.classificationType) ?? []), r]);
@@ -72,6 +94,12 @@ export function ScvTable({ rows, showVariant = false, typeLabels }: Props) {
                         label={r.termLabel}
                         bucket={r.bucket}
                         submitted={r.classification}
+                      />
+                      <FieldHistory
+                        label="Classification"
+                        periods={periodsOf.get(r.scvId) ?? []}
+                        shown={shown}
+                        link={link(r.scvId)}
                       />
                     </td>
                     <td className="py-2 pr-3">

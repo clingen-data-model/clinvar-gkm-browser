@@ -1,18 +1,19 @@
 // Variant reads. The detail is assembled from a few small queries, each reading only the rows
 // of one variant (the tables are sorted by variation_id).
 
-import type { VcvVersion } from '@cvb/shared/api';
 import {
   AggregateStatement,
   VariantDetail,
   VariantGene,
   VariantHgvs,
+  VcvVersion,
   Xref,
   type VariantRow,
 } from '@cvb/shared/api';
 import { SqlParams, type ParsedQuery } from '@cvb/shared/query';
 import { z } from 'zod';
 import type { Database } from '../../data/database.ts';
+import { fromStart, SPAN_COLUMNS } from '../history/queries.ts';
 
 const Core = VariantDetail.omit({
   vrs: true,
@@ -325,19 +326,6 @@ export async function listVariants(
   return { rows, total: n };
 }
 
-const Span = z.object({ from: z.iso.date(), to: z.iso.date().nullable() });
-
-/** SQL for the release span of grouped history rows, as `from` and `to`. */
-export const SPAN_COLUMNS = `
-  strftime(min(valid_from), '%Y-%m-%d') AS "from",
-  CASE WHEN bool_or(valid_to IS NULL) THEN NULL ELSE strftime(max(valid_to), '%Y-%m-%d') END AS "to"`;
-
-/** Marks the spans that start at the earliest release served (they may be older). */
-export function fromStart<T extends z.infer<typeof Span>>(db: Database, rows: T[]) {
-  const earliest = db.earliest();
-  return rows.map((r) => ({ ...r, fromStart: r.from === earliest }));
-}
-
 /** A variant's VCV versions over every release served, oldest first. */
 export async function vcvVersions(
   db: Database,
@@ -351,5 +339,5 @@ export async function vcvVersions(
      GROUP BY vcv_version ORDER BY min(valid_from), vcv_version`,
     [variationId],
   );
-  return fromStart(db, Span.extend({ version: z.int().nullable() }).array().parse(rows));
+  return fromStart(db, VcvVersion.omit({ fromStart: true }).array().parse(rows));
 }

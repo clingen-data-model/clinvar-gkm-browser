@@ -9,6 +9,7 @@ import { GeneList } from '../components/variant/GeneList.tsx';
 import { VcvVersionList } from '../components/history/VcvVersionList.tsx';
 import {
   variantQuery,
+  variantHistoryQuery,
   variantScvsQuery,
   variantVersionsQuery,
   vocabulariesQuery,
@@ -27,6 +28,7 @@ export const Route = createFileRoute('/variants/$id')({
         queryClient.query(variantQuery(release, params.id)),
         queryClient.query(variantScvsQuery(release, params.id)),
         queryClient.query(variantVersionsQuery(params.id)),
+        queryClient.query(variantHistoryQuery(params.id)),
         queryClient.query(vocabulariesQuery(release)),
       ]),
     ),
@@ -41,6 +43,7 @@ function VariantPage() {
   const { id } = Route.useParams();
   const { release: shown, data: variant } = useSuspenseQuery(variantQuery(release, id)).data;
   const versions = useSuspenseQuery(variantVersionsQuery(id)).data.data;
+  const history = useSuspenseQuery(variantHistoryQuery(id)).data.data;
   const scvs = useSuspenseQuery(variantScvsQuery(release, id)).data.data;
   const typeLabels = useTypeLabels();
 
@@ -109,14 +112,20 @@ function VariantPage() {
         <h2 id="aggregate" className="mb-3">
           ClinVar&rsquo;s aggregate classification
         </h2>
-        <AggregateCalls nodes={variant.aggregates} typeLabels={typeLabels} />
+        <AggregateCalls
+          variationId={id}
+          nodes={variant.aggregates}
+          history={history}
+          shown={shown}
+          typeLabels={typeLabels}
+        />
       </section>
 
       <section aria-labelledby="submissions" className="mb-10">
         <h2 id="submissions" className="mb-3">
           Submissions <span className="text-muted-foreground">({scvs.length})</span>
         </h2>
-        <ScvTable rows={scvs} typeLabels={typeLabels} />
+        <ScvTable rows={scvs} shown={shown} typeLabels={typeLabels} />
       </section>
 
       <section aria-labelledby="versions" className="mb-10">

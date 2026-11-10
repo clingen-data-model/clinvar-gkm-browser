@@ -1,6 +1,6 @@
 # ClinVar GKM browser: history
 
-Status: draft, 29 October 2026, on the `history` branch (first written 26 October; the model was revised on 29 October). How the app stores ClinVar's past releases and shows a record as it was. [data.md](data.md#history) has the earlier outline; this doc replaces its model.
+Status: draft, 29 October 2026, on the `history` branch (first written 26 October; the model was revised on 29 October; what counts as a change and field history decided 6 November). How the app stores ClinVar's past releases and shows a record as it was. [data.md](data.md#history) has the earlier outline; this doc replaces its model.
 
 ## What the source has
 
@@ -111,7 +111,9 @@ For a release R, rows only change in these ways:
 **Prior art:** ClinGen's clinvar-ingest-bq-tools keeps the same kind of table in BigQuery (`scripts/temporal-data-collection/`, e.g. `clinvar_ingest.clinvar_scvs`, read 29 October 2026). Each row has `start_release_date`, `end_release_date` and `deleted_release_date`, and "as of" is `release_date BETWEEN start_release_date AND end_release_date`. It differs from this design in three ways:
 - **Its end date is the last release a row was seen in,** so every unchanged row is updated each release to extend it. An open `valid_to` touches only the rows that changed.
 - **A deletion is a third date** rather than a closed row with no successor.
-- **Only some columns start a new row.** For SCVs: the version, statement type, rank, proposition type, the two clinical-impact columns, date last evaluated, significance, RCV accession and trait set. A change to the others (submitter name, PMIDs, review status, comment) overwrites the current row, so their history is lost. This design keeps every change (open question 1).
+- **Only some columns start a new row.** For SCVs: the version, statement type, rank, proposition type, the two clinical-impact columns, date last evaluated, significance, RCV accession and trait set. A change to the others (submitter name, PMIDs, review status, comment) overwrites the current row, so their history is lost. This design keeps every change (see below).
+
+**What counts as a change** (decided 6 November 2026): any change to any column of a row, as now, in every table. No column is singled out as noise, though much of what changes is annotation: over the backfill, HGVS content alone changed 68,388 variant-release events (7.4% of all, up to 81% in a quiet week) without moving the VCV version, about 37,000 of them expressions upstream adds and removes in alternate weeks, and upstream added a cytogenetic location to 142,496 variants. A reorder of a list isn't a change, since HGVS rows are keyed by content (see [HGVS rows](#hgvs-rows)). Rather than define which changes matter, the app shows the history of chosen fields (see [In the app](#in-the-app)).
 
 Its SCV rows carry the RCV accession without its version, as `scv.rcv_accession` will here.
 
@@ -320,6 +322,10 @@ Decided 29 October 2026:
   | `/variants/summary?group_by=variant_type` (every variant) | 483 ms | 650 ms |
 
   About 1.2 to 1.8 times as long, and the same as of 2026-07-06 or 2026-10-24. Startup registers the 18 releases and counts their rows in about 9 s. So no file of current rows.
+- **Field history** (decided and built 6 November 2026): a field that held more than one value over the releases served gets a button beside it saying how many times it changed ("3 changes", decided 10 November 2026) opening the values, newest first, each with the releases it held in and linking to the record as of the first of them. The first set: the aggregate classification and review status for each classification type on the variant page, and the classification of each SCV in the SCV tables. The API returns a field's periods, runs of consecutive releases with one value (`/variants/{id}/history`, `/scvs/history`); a release without the record ends a period, so a span never covers a release the record wasn't in, and a period already held in the earliest release reads "by" that release. Over the backfill (2026-06-27 to 2026-10-24):
+  - **SCVs are reclassified in place, under the same accession.** 6,447 of the 6.86M SCVs changed classification, every change (6,694) with a new SCV version. Of the 9,075 SCVs removed, 2 were replaced the same release by a new SCV from the same submitter on the same variant, so submitters don't withdraw and resubmit to reclassify.
+  - **The aggregate pathogenicity call** changed 49,973 times on 49,049 variants, 885 of them more than once. Most changes take in a new submission: Benign to Benign/Likely benign (16,630), Uncertain significance to Conflicting (11,775), Pathogenic to Pathogenic/Likely pathogenic (5,360).
+  - **Measured** against the dev server over the backfill, a few runs each after a warm-up: `/variants/17004/history` about 50 ms, `/scvs/history` about 25 ms for the 114 SCVs of variant 17004 and 30 to 60 ms for 500 SCVs drawn at random.
 - **Versions** (built 30 October 2026): `/variants/{id}/versions` and `/scvs/{id}/versions` read schema `history`, a view per table of every row ever with the release it first held in and the first it didn't (`Database.rowsEver`). An SCV version is grouped by `scv_version`, as of its last row, so a change without a new version (a staff edit) shows as the version's latest state. About 12 ms each on the backfill.
 - **In the web app** (built 30 October 2026): the header's release picker sets the `release` URL parameter, which the root route keeps on every link (`apps/web/src/lib/release.ts`), and every read passes it to the API and keys its cache by it. The variant page lists its VCV versions, each linking to the variant as of its first release. The SCV page has a table of the SCV's versions, with the VCV versions each overlapped.
 - **Only a release served** answers a `release` parameter (decided 3 November 2026, replacing the rule of 29 October that a date between releases meant the latest release on or before it). A page read as of one release but asked for as of another date would show data under a date it doesn't belong to. The API answers any other date with a 404 listing the releases served (`releases` in the problem JSON). The web app checks the parameter against the releases before any page loads, and in place of the page shows that the release isn't available, the nearest releases before and after it, and every release stored, each a link to the same page and filters as of that release (`UnknownReleasePage`). A malformed value gets the same page, where it used to be dropped silently for the current release.
@@ -336,7 +342,5 @@ Upstream keeps the list sorted by expression, then protein expression (none of t
 
 ## Open questions
 
-1. **Which columns count as a change.** Every column (the hash) is simplest, and catches the MedGen re-mappings. The rows keep every change; a timeline could show only version and classification changes.
-2. **What a "variant changed in release R" signal counts.** HGVS content alone changed 68,388 variant-release events over the backfill, 7.4% of all and up to 81% in a quiet week, without ever moving the VCV version; upstream also added a cytogenetic location to 142,496 variants. About 37,000 of the HGVS-only events are expressions upstream adds and removes in alternate weeks. A timeline could show classification and submission changes (SCV and statement rows, the VCV version) apart from annotation-only ones (HGVS, cytogenetic location, gene list, name), and collapse the reverts.
-3. **Shipping the history in the image or downloading it at startup,** to decide from its size after the backfill.
-4. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).
+1. **Shipping the history in the image or downloading it at startup,** to decide from its size after the backfill.
+2. **Earlier history** from NCBI's tab-delimited archives, back to 2014 ([data.md](data.md#history)).
