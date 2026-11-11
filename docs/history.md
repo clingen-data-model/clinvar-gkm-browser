@@ -28,14 +28,16 @@ As of 29 October 2026, ClinVar-GKM covers 18 ClinVar releases, 2026-06-27 to 202
 
 ClinVar's [identifiers documentation](https://www.ncbi.nlm.nih.gov/clinvar/docs/identifiers/) says an SCV's version goes up when its submitter updates it, even if only the submission date changes. A VCV's or RCV's version goes up when its content changes "because of addition to, updates of, or deletion of the SCV accessions on which it is based". Staff edits (rs numbers, HGVS) change no version.
 
+**Removing an SCV doesn't give its VCV a new version** (measured 11 November 2026, [research/vcv-versions-and-scv-removals.md](research/vcv-versions-and-scv-removals.md)), whatever the documentation says. ClinVar drops the SCV from the VCV in place, even when the aggregate call changes as a result. Of the 9,086 SCVs removed over the 19 releases, 109 came with a new VCV version, and 108 of those also had an SCV added or re-versioned under it. ClinVar's own VCV XML for 2026-09-23 and 2026-09-28 shows the same. So a VCV version isn't one state of the record.
+
 The 2026-10-18 delta agrees. Measured 26 October 2026, against the 2026-10-11 delta for earlier versions:
 - **Every SCV version bump bumped its VCV** (1,966 of 1,966).
-- **Nearly every VCV bump has an SCV change under it.** Of the 5,366 bumps, 5,362 have a new or re-versioned SCV and 3 have an SCV whose content changed without a new version. That leaves 1, probably a removed SCV (13 were removed that week).
+- **Nearly every VCV bump has an SCV change under it.** Of the 5,366 bumps, 5,362 have a new or re-versioned SCV and 3 have an SCV whose content changed without a new version. That leaves 1, which a removed SCV doesn't explain (see above).
 - **The aggregate call usually stays the same.** Of the 43 bumped VCVs whose previous version was visible, 39 kept their classification (e.g. VCV000000745 version 21 to 22, Pathogenic).
 - **One version per weekly release:** every bump was +1.
 - **ClinVar-GKM also changes SCV content without a new version:** 5,839 SCVs that week, only about 1% of them under a bumped VCV. In the 3 we could compare, a submitted condition's MedGen mapping changed. So SCV versions alone don't capture every change to a page.
 
-Each VCV version lists exactly which SCV versions it cites, in its evidence lines (`VCV….41-G-PATH-CP.contributing` → `SCV000024273.152`). "The SCVs as of VCV version N" is therefore a lookup, not an inference from dates.
+Each VCV version lists exactly which SCV versions it cites, in its evidence lines (`VCV….41-G-PATH-CP.contributing` → `SCV000024273.152`). "The SCVs as of VCV version N" is therefore a lookup, not an inference from dates, but as of a release: a removal rewrites a version's evidence lines in place.
 
 ## Model
 
