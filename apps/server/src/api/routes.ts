@@ -440,7 +440,10 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
       if (format === 'csv') {
         return reply
           .type('text/csv; charset=utf-8')
-          .header('content-disposition', `attachment; filename="clinvar-stats-${figure.slug}-${release}.csv"`)
+          .header(
+            'content-disposition',
+            `attachment; filename="clinvar-stats-${figure.slug}-${release}.csv"`,
+          )
           .send(statsCsv(data));
       }
       return data;

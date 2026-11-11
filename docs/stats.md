@@ -1,6 +1,6 @@
 # ClinVar GKM browser: statistics
 
-Status: plan, 10 November 2026; not built yet. A page of whole-ClinVar figures that people cite in slides, papers and grant applications, starting from two slides that have been used before and the system-level trends in issue #3. Covers 2026-06-27 onward, the releases in the history ([history.md](history.md)); earlier years need a backfill, which is a separate, later piece of work.
+Status: built on the `stats` branch, 11 November 2026 (planned 10 November). A page of whole-ClinVar figures that people cite in slides, papers and grant applications, starting from two slides that have been used before and the system-level trends in issue #3. Covers 2026-06-27 onward, the releases in the history ([history.md](history.md)); earlier years need a backfill, which is a separate, later piece of work.
 
 ## Figures
 
@@ -87,34 +87,54 @@ The figures' SQL is in `src/api/stats/queries.ts`, one entry per figure in a reg
 
 ## Pages
 
-- **`/stats`:** every figure, one section each with `id` set to its slug, so `/stats#aggregate-classification` links to it; a list of figures at the top.
-- **`/stats/<slug>`:** one figure with its controls (release, releases, conflict definition), all in the URL, so a link reproduces exactly what was cited.
-- Both follow the header's release picker.
+Built 11 November 2026 (the `stats` branch).
 
-Each figure has: the chart; a table of its numbers (for accessibility, and for copying into a paper); the categories table above, generated from the same mapping the query uses, with the labels and counts in the release shown; downloads as SVG, PNG and CSV; and a citation line (ClinVar release, ClinVar-GKM, this app's URL, the date).
+- **`/stats`:** every figure with its default options, one section each with `id` set to its slug, so `/stats#aggregate-classification` links to it, and a list of figures at the top. Each section loads on its own, so the first figure is up before the last is counted. The header links to it.
+- **`/stats/<slug>`:** one figure with its options (which releases, what counts as a conflict, the condition rule), all in the URL, so a link reproduces exactly what was cited. An option the figure doesn't take is left out of the request rather than sent.
+- Both follow the header's release picker: a trend runs up to the release chosen.
+
+A figure's page has: the chart; its definitions, with links to bq-tools' vocabulary and this doc; a citation (the figure, the releases, ClinVar-GKM, the page's URL with its options, the reader's date) and the counts as CSV or JSON; a table of the numbers (for accessibility, and for copying into a paper); and what each category contains in the release shown, every label counted with its count, from the same rows as the chart.
 
 ### Charts
 
-**Hand-drawn SVG, no chart library** (decided 10 November 2026). Bars, lines and pies are a few hundred lines with the shared frame; a library wouldn't remove the hard part, which is placing text. What keeps them stable when the numbers change:
-- **Fixed coordinates:** every figure draws in a fixed 16:9 viewBox (960 × 540), scaled to the page. Positions are arithmetic on the data, never on rendered text.
-- **Fixed number formats:** percentages to one decimal, counts with thousands separators. Rounded percentages are adjusted (largest remainder) so each bar adds to exactly 100.0.
-- **Labels only where they fit:** a segment gets an inside label only if it's tall enough for one line; otherwise the number is in the table.
-- **Fixed strings:** SVG can't wrap text, but the category names are ours, so the legend is laid out and tested for them. Titles, definitions and the citation are HTML around the chart.
-- **Self-contained export:** colours and fonts are set on the SVG elements, not through CSS classes, so a downloaded SVG looks the same in a slide; PNG is that SVG drawn on a canvas at 2× or 3×.
-- **Tests:** the layout functions (segments fill the bar; labels dropped below the minimum; percentages add to 100.0), and Playwright screenshots over the fixture.
+**Hand-drawn SVG, no chart library** (decided 10 November 2026; `apps/web/src/components/stats/`). A library wouldn't remove the hard part, which is placing text. What keeps them stable when the numbers change:
+- **Fixed coordinates:** a chart across the page draws 960 units wide, one of two side by side 640, scaled to the page. Positions are arithmetic on the data, never on rendered text.
+- **Fixed number formats:** counts with thousands separators; shares to one decimal (two on the line charts, whose shares are under 2%), rounded by largest remainder so each release's shares add up to exactly 100.0. That can differ from rounding each alone by 0.1: single submitters on 2026-10-18 are 78.147%, shown as 78.2% so the four groups add up. A share that rounds to zero but isn't shows as "<0.1%".
+- **Labels only where they fit:** a share is printed inside its segment only if the segment is at least 16 units tall (48 wide), or wide enough for its text in a bar; otherwise it's in the tooltip and the table. With many columns, dates are labelled every few columns, counting back from the latest.
+- **Fixed strings:** SVG can't wrap text, but the category names are ours, so legends are a column beside the columns or a three-column grid under a bar. Titles and definitions are HTML around the chart; the source (releases, ClinVar-GKM, the app and the figure's path) is drawn under it, so it stays with a download.
+- **Self-contained export:** on screen, colors follow the theme through CSS (`light-dark()`); a download writes each element's light color onto it, drops hover marks, and adds a white ground and the font, so it looks the same in a slide whichever theme it was downloaded from. PNG is that SVG drawn at 3× (2880 × 1560 for the classification columns).
+- **Hover and keyboard:** a pointer, or the arrow keys once the chart has focus (one tab stop per chart), picks the nearest point and shows every value at it, value first; the table has them all without hovering. Each chart is an image with a name saying so.
+- **Tests:** the rounding, ticks and paints (`apps/web/src/lib/stats.test.ts`); in the browser, every figure drawn, axe on the overview and two figure pages, options in the URL reaching the CSV link and the citation, and the keyboard tooltip.
+
+**Which chart for which figure** (decided 11 November 2026):
+- **Classification over releases:** 100% stacked columns, one per release, with the category legend beside them, as on the slide. By default the last release of each month (5 columns now); every release is an option.
+- **One whole in one release** (`submitter-agreement`, `single-submitter-classification`): a single tall segmented bar with its shares printed where they fit and a legend of names. Not a pie: parts laid along one line compare more exactly than angles. A pie is easy to add if presenters want the slide's.
+- **Counts over releases** (the VUS and conflict trends): two line charts side by side, the count and the share of the whole, each with its own axis, rather than one chart with two scales. Lines run on a time axis (releases aren't evenly spaced) whose ticks span the values, not from zero, so a change of a few percent shows; the ticks say where it starts. Every release by default.
+
+**Colors.** The categories follow the app's significance pills (pathogenic red, uncertain amber, benign green) with the conflicts and low penetrance between, in stack order; groups with no meaning in color (`submitter-agreement`) take a validated categorical palette's first slots in fixed order (blue, orange, aqua, amber), and lines its blue. Each mode was checked against the app's own backgrounds (white, and `oklch(16% 0.01 260)` in dark mode) for an OKLCH lightness band and chroma floor, and for every pair that touches in the stack, separation of at least 8 (OKLab ΔE × 100) under simulated protanopia and deuteranopia and at least 15 with normal vision. Light mode's likely pathogenic, VUS and likely benign are under 3:1 against white, so labels inside them are near-black and every chart has its table.
+
+| Category | Light | Dark |
+| --- | --- | --- |
+| Pathogenic | `#c62f2f` | `#e66767` |
+| Likely pathogenic | `#ef8c89` | `#ab3c3a` |
+| Low penetrance / risk allele | `#6250d6` | `#9085e9` |
+| Conflict: P/LP vs VUS/LB/B | `#c0418a` | `#d55181` |
+| VUS | `#eda100` | `#c98500` |
+| Conflict: VUS vs LB/B | `#2a78d6` | `#3987e5` |
+| Likely benign | `#6cc58a` | `#0b7a4e` |
+| Benign | `#008300` | `#4aaa3c` |
+| No classification, Unmapped | `#898781` | `#898781` |
 
 Reconsider a library if we want scatter plots, maps or interaction beyond tooltips.
 
 ## Steps
 
-1. Shared contracts: the figure list, parameters and the long-format response (`packages/shared/src/api/`), and the category map with its strength and penetrance terms.
-2. Server: the registry and the six figures' SQL, the two routes, the in-memory cache, CSV. Tests over the fixture, including the "Unmapped" check.
-3. Web: the figure frame (chart, table, categories, downloads, citation), the stacked-bar, line and bar charts, and the two routes.
+1. ~~Shared contracts~~ and 2. ~~server~~ (11 November 2026): the figure list, options and long-format response, the category rules, the six figures' SQL, the routes, the cache and CSV, with tests over the fixture and a two-release history.
+3. ~~Web~~ (11 November 2026): the charts, the figure pages and the overview, with browser tests.
 4. Measure each figure on Cloud Run; decide on caching ahead of requests or a stats table if needed.
 5. At the next rebuild: `strength_code` and `penetrance_level` into `classification_term`, and the stats code reads them from there.
 
 ## Open questions
 
-1. **A pie for `submitter-agreement`?** The slide uses one; a single 100% bar compares more precisely and sits beside the classification bar. Either is easy.
-2. **Which releases a trend shows by default:** every release (19 weekly bars), or the first of each month.
-3. **Earlier years:** the slides go back to 2023. A backfill (NCBI's archived `variant_summary` files, or bq-tools' BigQuery tables) is later work ([data.md](data.md#history)).
+1. **A pie for `submitter-agreement`,** as on the slide? A segmented bar for now (above).
+2. **Earlier years:** the slides go back to 2023. A backfill (NCBI's archived `variant_summary` files, or bq-tools' BigQuery tables) is later work ([data.md](data.md#history)).

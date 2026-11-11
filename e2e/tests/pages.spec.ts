@@ -111,6 +111,8 @@ for (const path of [
   '/search?q=hfe',
   '/schema',
   '/variants/10?release=2020-01-01',
+  '/stats/aggregate-classification',
+  '/stats/clinsig-conflict-variants?conflict=pairs&condition_match=any',
 ]) {
   test(`${path} has no accessibility violations`, async ({ page }) => {
     await page.goto(path);
@@ -251,4 +253,41 @@ test('a slow reload keeps the page, dimmed, with a loading indicator', async ({ 
   await expect(page.getByRole('combobox', { name: 'Conditions' })).toHaveValue('any');
   await expect(page.locator('main')).toHaveAttribute('aria-busy', 'false');
   await expect(status).toHaveText('');
+});
+
+test('the statistics page draws every figure, each linking to its own page', async ({ page }) => {
+  await page.goto('/stats');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Statistics');
+  const charts = page.locator('section svg[role="img"]');
+  // Six figures; the three trends drawn as lines have two charts each.
+  await expect(charts).toHaveCount(9);
+  const results = await axe(page).analyze();
+  expect(results.violations.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
+  await page
+    .getByRole('heading', { name: 'How variants’ classifications were reached' })
+    .getByRole('link')
+    .click();
+  await expect(page).toHaveURL(/\/stats\/submitter-agreement$/);
+  await expect(page.getByRole('table').first()).toContainText('Single submitter');
+});
+
+test("a figure's options are in its URL, and its CSV and citation follow them", async ({
+  page,
+}) => {
+  await page.goto('/stats/clinsig-conflict-variants');
+  await page.getByLabel('What counts as a conflict').selectOption('pairs');
+  await expect(page).toHaveURL(/conflict=pairs/);
+  await page.getByLabel('Conditions of the two submissions').selectOption('any');
+  await expect(page).toHaveURL(/condition_match=any/);
+  await expect(page.getByRole('link', { name: 'Download the counts as CSV' })).toHaveAttribute(
+    'href',
+    /conflict=pairs&condition_match=any&format=csv/,
+  );
+  await expect(page.getByText(/accessed \d{4}-\d{2}-\d{2}/)).toContainText(
+    'conflict=pairs&condition_match=any',
+  );
+  // The chart reads out each point from the keyboard.
+  await page.locator('svg[role="img"]').first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('figure [role="status"]').first()).toContainText('2026-10-18');
 });
