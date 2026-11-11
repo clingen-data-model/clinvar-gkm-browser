@@ -29,6 +29,9 @@ const VARIANT = 10;
 const CHANGED = 198337; // on VARIANT, a new version reclassifying it in NEXT
 const DELETED = 20169; // on VARIANT, gone in NEXT
 const PATH_ROOT = 'VCV000000010.141-G-PATH'; // VARIANT's aggregate PATH call, reclassified in NEXT
+// Conflicts that lose their conflicting_explanation in NEXT, so stats split them by their SCVs:
+// one between pathogenic and uncertain, one between uncertain and benign.
+const UNEXPLAINED = ['VCV000013961.143-G-PATH', 'VCV000000011.97-G-PATH'];
 // What NEXT changes: rows replaced (with the new values) and rows closed.
 const NEXT_CHANGES: Partial<Record<string, { where: string; replace: string; closes: string }>> = {
   scv: {
@@ -38,9 +41,14 @@ const NEXT_CHANGES: Partial<Record<string, { where: string; replace: string; clo
   },
   // A new VCV version names its statements anew: the PATH root under another ID, reclassified.
   vcv_statement: {
-    where: `statement_id = '${PATH_ROOT}'`,
-    replace: `'${PATH_ROOT.replace('.141-', '.142-')}' AS statement_id, 'Pathogenic/Likely pathogenic' AS classification`,
-    closes: `statement_id = '${PATH_ROOT}'`,
+    where: `statement_id IN ('${PATH_ROOT}', '${UNEXPLAINED.join("', '")}')`,
+    replace: `CASE WHEN statement_id = '${PATH_ROOT}' THEN '${PATH_ROOT.replace('.141-', '.142-')}'
+                   ELSE statement_id END AS statement_id,
+              CASE WHEN statement_id = '${PATH_ROOT}' THEN 'Pathogenic/Likely pathogenic'
+                   ELSE classification END AS classification,
+              CASE WHEN statement_id = '${PATH_ROOT}' THEN conflicting_explanation
+                   ELSE NULL END AS conflicting_explanation`,
+    closes: `statement_id IN ('${PATH_ROOT}', '${UNEXPLAINED.join("', '")}')`,
   },
   variant: {
     where: `variation_id = ${String(VARIANT)}`,
@@ -316,12 +324,15 @@ describe('stats over a history', () => {
         .reduce((n, r) => n + r.count, 0);
     const all = (release: string) =>
       body.rows.filter((r) => r.release === release).reduce((n, r) => n + r.count, 0);
-    // VARIANT's call goes from a conflict to Pathogenic/Likely pathogenic.
     expect(all(NEXT)).toBe(all(FIXTURE_RELEASE));
-    const conflicts = (release: string) =>
-      count(release, 'Conflict: P/LP vs VUS/LB/B') + count(release, 'Conflict: VUS vs LB/B');
-    expect(conflicts(NEXT)).toBe(conflicts(FIXTURE_RELEASE) - 1);
+    // VARIANT's call goes from a P/LP conflict to Pathogenic/Likely pathogenic. The two conflicts
+    // without an explanation in NEXT are split by their SCVs into the same categories as before.
+    const clinsig = 'Conflict: P/LP vs VUS/LB/B';
+    const other = 'Conflict: VUS vs LB/B';
+    expect(count(NEXT, clinsig)).toBe(count(FIXTURE_RELEASE, clinsig) - 1);
+    expect(count(NEXT, other)).toBe(count(FIXTURE_RELEASE, other));
     expect(count(NEXT, 'Likely pathogenic')).toBe(count(FIXTURE_RELEASE, 'Likely pathogenic') + 1);
+    expect(body.categories.map((c) => c.name)).not.toContain('Unmapped');
   });
 
   it('counts a trend up to the release asked for, and one-release figures in it', async () => {

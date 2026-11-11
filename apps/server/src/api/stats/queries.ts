@@ -1,6 +1,13 @@
 // Whole-ClinVar figures (docs/stats.md): counts per release, read from every row a table ever held
-// (Database.rowsEver), so a trend needs no table of its own. Each figure's result depends only on
-// its options and the releases served, which change only on a restart, so results are cached.
+// (Database.rowsEver), so a trend needs no table of its own.
+//
+// Rows are first counted by the span of releases they held in (valid_from, valid_to) and by what
+// the figure groups them on, which leaves a few thousand groups; only those are spread over the
+// releases counted. Joining every row to every release instead multiplies millions of rows by the
+// releases (7.1M SCV rows by 19), and the overview's six figures at once ran a Cloud Run instance
+// (4 vCPU, 8 GiB) out of memory. For the same reason the figures' queries run one at a time. A
+// figure's result depends only on its options and the releases served, which change only on a
+// restart, so results are cached.
 
 import {
   AGGREGATE_CATEGORIES,
@@ -35,6 +42,12 @@ function held(t: string, release: string): string {
   return `${t}.valid_from <= ${release} AND (${t}.valid_to IS NULL OR ${t}.valid_to > ${release})`;
 }
 
+/** Where the release spans of rows `a` and `b` overlap (SQL). */
+function overlaps(a: string, b: string): string {
+  const end = (t: string) => `coalesce(${t}.valid_to, 'infinity'::DATE)`;
+  return `${a}.valid_from < ${end(b)} AND ${b}.valid_from < ${end(a)}`;
+}
+
 /** The releases counted, as SQL for a table r(release). */
 function releaseTable(params: SqlParams, releases: readonly string[]): string {
   const values = releases.map((r) => `(${params.add(r)})`).join(', ');
@@ -52,7 +65,8 @@ async function pathTerms(db: Database, release: string) {
     })
     .array()
     .parse(
-      await db.query(
+      await query(
+        db,
         release,
         `SELECT term AS term, source_code AS "sourceCode", label AS label, significance AS significance
          FROM classification_term WHERE classification_type = 'PATH'`,
@@ -67,11 +81,12 @@ async function pathTerms(db: Database, release: string) {
 const CONFLICTING = `'Conflicting %'`;
 
 /**
- * CTEs ending in `classified`: each variant's germline aggregate (root) in each release, with its
- * classification and, for a conflict, whether a contributing SCV is on the pathogenic side. That
- * comes from conflicting_explanation, ClinVar's list of the contributing SCVs' terms
- * ("Likely pathogenic(1); Uncertain significance(1)"), or, for a conflict without one (two expert
- * panels disagreeing), from the contributing SCVs themselves.
+ * CTEs over each variant's germline aggregate (root) rows: `roots`, each row with its span and
+ * classification and, for a conflict, whether a contributing SCV is on the pathogenic side; and
+ * `counted`, the variants per release, classification and split. The split comes from the row's
+ * conflicting_explanation, ClinVar's list of the contributing SCVs' terms ("Likely
+ * pathogenic(1); Uncertain significance(1)"). A conflict without one (two expert panels
+ * disagreeing) is marked 'unexplained' and left out of `counted`; unexplainedConflicts splits it.
  */
 function classifiedCtes(
   db: Database,
@@ -80,47 +95,33 @@ function classifiedCtes(
   restrict = '',
 ) {
   const vcv = db.rowsEver('vcv_statement');
+  // An explanation's terms with their counts stripped, each looked up in the terms' map.
+  const parts = (test: string) =>
+    `list_bool_or(list_transform(string_split(t.conflicting_explanation, '; '),
+       lambda p: tm.m[lower(regexp_replace(p, '\\(\\d+\\)$', ''))] ${test}))`;
   return `r AS (${releaseTable(params, releases)}),
-    roots AS MATERIALIZED (
-      SELECT r.release AS release, t.variation_id AS variation_id,
-             t.classification AS classification, t.conflicting_explanation AS explanation
-      FROM r JOIN ${vcv} t ON ${held('t', 'r.release')}
-      WHERE t.node_kind = 'root' AND t.classification_type = 'PATH' ${restrict}
-    ),
-    path_terms AS (
-      SELECT source_code AS source_code, term AS term, significance AS significance
+    tm AS (
+      SELECT map(list(source_code), list(significance)) AS m
       FROM classification_term WHERE classification_type = 'PATH'
     ),
-    explained AS (
-      SELECT e.release AS release, e.variation_id AS variation_id,
-             bool_or(t.significance = 2) AS clinsig, bool_or(t.significance IS NULL) AS unmatched
-      FROM (SELECT release, variation_id, unnest(string_split(explanation, '; ')) AS part
-            FROM roots WHERE explanation IS NOT NULL) e
-      LEFT JOIN path_terms t ON t.source_code = lower(regexp_replace(e.part, '\\(\\d+\\)$', ''))
-      GROUP BY e.release, e.variation_id
+    roots AS (
+      SELECT t.variation_id AS variation_id, t.valid_from AS valid_from, t.valid_to AS valid_to,
+             t.classification AS classification,
+             CASE WHEN t.classification IS NULL OR t.classification NOT LIKE ${CONFLICTING} THEN NULL
+                  WHEN t.conflicting_explanation IS NULL THEN 'unexplained'
+                  WHEN ${parts('= 2')} THEN 'clinsig'
+                  WHEN ${parts('IS NULL')} THEN 'unknown'
+                  ELSE 'other' END AS conflict
+      FROM ${vcv} t, tm
+      WHERE t.node_kind = 'root' AND t.classification_type = 'PATH' ${restrict}
     ),
-    unexplained AS (
-      SELECT o.release AS release, o.variation_id AS variation_id,
-             bool_or(t.significance = 2) AS clinsig, bool_or(t.significance IS NULL) AS unmatched
-      FROM roots o
-      JOIN ${vcv} l ON l.variation_id = o.variation_id AND ${held('l', 'o.release')}
-      JOIN ${db.rowsEver('scv')} s ON s.variation_id = o.variation_id
-        AND s.submission_level = l.submission_level AND ${held('s', 'o.release')}
-      LEFT JOIN path_terms t ON t.term = s.term
-      WHERE o.explanation IS NULL AND o.classification LIKE ${CONFLICTING}
-        AND l.classification_type = 'PATH' AND l.node_kind = 'level' AND l.contributes
-        AND s.classification_type = 'PATH'
-      GROUP BY o.release, o.variation_id
-    ),
-    classified AS (
-      SELECT o.release AS release, o.variation_id AS variation_id, o.classification AS classification,
-             CASE WHEN o.classification IS NULL OR o.classification NOT LIKE ${CONFLICTING} THEN NULL
-                  WHEN coalesce(e.clinsig, u.clinsig) THEN 'clinsig'
-                  WHEN NOT coalesce(e.unmatched, u.unmatched, true) THEN 'other'
-                  ELSE 'unknown' END AS conflict
-      FROM roots o
-      LEFT JOIN explained e ON e.release = o.release AND e.variation_id = o.variation_id
-      LEFT JOIN unexplained u ON u.release = o.release AND u.variation_id = o.variation_id
+    counted AS (
+      SELECT r.release AS release, g.classification AS classification, g.conflict AS conflict,
+             sum(g.n) AS n
+      FROM (SELECT valid_from, valid_to, classification, conflict, count(*) AS n FROM roots
+            WHERE conflict IS DISTINCT FROM 'unexplained' GROUP BY ALL) g
+      JOIN r ON ${held('g', 'r.release')}
+      GROUP BY ALL
     )`;
 }
 
@@ -151,6 +152,89 @@ function agreementCte(params: SqlParams): string {
     )`;
 }
 
+interface Unexplained {
+  release: string;
+  classification: string;
+  conflict: 'clinsig' | 'other' | 'unknown';
+  /** Its contributing SCVs in the release, by term code. */
+  terms: string[];
+}
+
+/**
+ * The conflicts without a conflicting_explanation in each release (two expert panels disagreeing:
+ * two variants on 2026-10-18), split by their contributing SCVs in that release. Looked up by
+ * variant ID in a query of their own: joined inside a figure's query, DuckDB can't tell they're
+ * few and builds its hash tables from every level node and SCV ever (1.1 GB, measured).
+ */
+async function unexplainedConflicts(
+  db: Database,
+  release: string,
+  releases: readonly string[],
+): Promise<Unexplained[]> {
+  const vcv = db.rowsEver('vcv_statement');
+  const params = new SqlParams();
+  const roots = z
+    .object({
+      release: z.iso.date(),
+      variation_id: z.coerce.number().int(),
+      classification: z.string(),
+    })
+    .array()
+    .parse(
+      await query(
+        db,
+        release,
+        `WITH r AS (${releaseTable(params, releases)})
+         SELECT strftime(r.release, '%Y-%m-%d') AS release, t.variation_id AS variation_id,
+                t.classification AS classification
+         FROM r JOIN ${vcv} t ON ${held('t', 'r.release')}
+         WHERE t.node_kind = 'root' AND t.classification_type = 'PATH'
+           AND t.classification LIKE ${CONFLICTING} AND t.conflicting_explanation IS NULL`,
+        params.values,
+      ),
+    );
+  if (roots.length === 0) return [];
+  const ids = [...new Set(roots.map((r) => r.variation_id))];
+  const scvParams = new SqlParams();
+  const scvs = z
+    .object({
+      release: z.iso.date(),
+      variation_id: z.coerce.number().int(),
+      term: z.string().nullable(),
+    })
+    .array()
+    .parse(
+      await query(
+        db,
+        release,
+        `WITH r AS (${releaseTable(scvParams, releases)})
+         SELECT strftime(r.release, '%Y-%m-%d') AS release, s.variation_id AS variation_id,
+                s.term AS term
+         FROM r
+         JOIN ${vcv} l ON ${held('l', 'r.release')}
+         JOIN ${db.rowsEver('scv')} s ON s.variation_id = l.variation_id
+           AND s.submission_level = l.submission_level AND ${held('s', 'r.release')}
+         WHERE l.variation_id IN (${scvParams.list(ids)}) AND s.variation_id IN (${scvParams.list(ids)})
+           AND l.classification_type = 'PATH' AND l.node_kind = 'level' AND l.contributes
+           AND s.classification_type = 'PATH'`,
+        scvParams.values,
+      ),
+    );
+  const { byCode } = await pathTerms(db, release);
+  return roots.map((root) => {
+    const terms = scvs
+      .filter((s) => s.release === root.release && s.variation_id === root.variation_id)
+      .map((s) => s.term ?? '');
+    const significance = terms.map((t) => byCode.get(t)?.significance);
+    const conflict = significance.includes(2)
+      ? 'clinsig'
+      : terms.length === 0 || significance.includes(undefined)
+        ? 'unknown'
+        : 'other';
+    return { release: root.release, classification: root.classification, conflict, terms };
+  });
+}
+
 const ClassifiedRow = CountRow.extend({
   conflict: z.enum(['clinsig', 'other', 'unknown']).nullable(),
 });
@@ -168,18 +252,29 @@ async function aggregateRows(
     ? `AND t.variation_id IN (SELECT variation_id FROM agreement WHERE grp = ${params.add(AGREEMENT_GROUPS[3].name)})`
     : '';
   const rows = ClassifiedRow.array().parse(
-    await db.query(
+    await query(
+      db,
       release,
       `WITH ${agreement} ${classifiedCtes(db, params, releases, restrict)}
        SELECT strftime(release, '%Y-%m-%d') AS release, classification AS label, conflict AS conflict,
-              count(*) AS count
-       FROM classified GROUP BY ALL`,
+              sum(n) AS count
+       FROM counted GROUP BY ALL`,
       params.values,
     ),
   );
+  // Single-submitter variants are never conflicts (those are Discordant), so have none.
+  const unexplained = singleSubmitterOnly ? [] : await unexplainedConflicts(db, release, releases);
   const { bySource } = await pathTerms(db, release);
   return merge(
-    rows.map((r) => ({
+    [
+      ...rows,
+      ...unexplained.map((u) => ({
+        release: u.release,
+        label: u.classification,
+        conflict: u.conflict,
+        count: 1,
+      })),
+    ].map((r) => ({
       release: r.release,
       category: r.label === null ? UNMAPPED.name : aggregateCategory(r.label, r.conflict, bySource),
       label: r.label,
@@ -195,7 +290,8 @@ async function agreementRows(db: Database, release: string): Promise<StatsRow[]>
   const rows = CountRow.extend({ category: z.string() })
     .array()
     .parse(
-      await db.query(
+      await query(
+        db,
         release,
         `WITH ${cte}
          SELECT ${params.add(release)} AS release, grp AS category, review_status AS label, count(*) AS count
@@ -210,12 +306,16 @@ async function agreementRows(db: Database, release: string): Promise<StatsRow[]>
 async function scvRows(db: Database, release: string, releases: readonly string[]) {
   const params = new SqlParams();
   const rows = CountRow.array().parse(
-    await db.query(
+    await query(
+      db,
       release,
-      `WITH r AS (${releaseTable(params, releases)})
-       SELECT strftime(r.release, '%Y-%m-%d') AS release, s.term AS label, count(*) AS count
-       FROM r JOIN ${db.rowsEver('scv')} s ON ${held('s', 'r.release')}
-       WHERE s.classification_type = 'PATH'
+      `WITH r AS (${releaseTable(params, releases)}),
+       g AS (
+         SELECT s.valid_from AS valid_from, s.valid_to AS valid_to, s.term AS term, count(*) AS n
+         FROM ${db.rowsEver('scv')} s WHERE s.classification_type = 'PATH' GROUP BY ALL
+       )
+       SELECT strftime(r.release, '%Y-%m-%d') AS release, g.term AS label, sum(g.n) AS count
+       FROM r JOIN g ON ${held('g', 'r.release')}
        GROUP BY ALL`,
       params.values,
     ),
@@ -269,13 +369,18 @@ async function conflictVariantRows(
   if (options.conflict === 'pairs') {
     const params = new SqlParams();
     const rows = CountRow.array().parse(
-      await db.query(
+      await query(
+        db,
         release,
-        `WITH r AS (${releaseTable(params, releases)})
+        `WITH r AS (${releaseTable(params, releases)}),
+         g AS (
+           SELECT DISTINCT p.variation_id AS variation_id, p.valid_from AS valid_from,
+                  p.valid_to AS valid_to
+           FROM ${db.rowsEver('scv_classification_pair')} p WHERE ${pairConflictWhere(options)}
+         )
          SELECT strftime(r.release, '%Y-%m-%d') AS release, NULL AS label,
-                count(DISTINCT p.variation_id) AS count
-         FROM r JOIN ${db.rowsEver('scv_classification_pair')} p ON ${held('p', 'r.release')}
-         WHERE ${pairConflictWhere(options)}
+                count(DISTINCT g.variation_id) AS count
+         FROM r JOIN g ON ${held('g', 'r.release')}
          GROUP BY ALL`,
         params.values,
       ),
@@ -309,25 +414,55 @@ async function conflictScvRows(
     scvRows(db, release, releases),
   );
   const params = new SqlParams();
+  const vcv = db.rowsEver('vcv_statement');
+  const scv = db.rowsEver('scv');
+  const end = (t: string) => `coalesce(${t}.valid_to, 'infinity'::DATE)`;
   const sql =
     options.conflict === 'pairs'
-      ? `WITH r AS (${releaseTable(params, releases)})
-         SELECT strftime(r.release, '%Y-%m-%d') AS release, p.a_term AS label,
-                count(DISTINCT p.a_scv_id) AS count
-         FROM r JOIN ${db.rowsEver('scv_classification_pair')} p ON ${held('p', 'r.release')}
-         WHERE ${pairConflictWhere(options)}
+      ? `WITH r AS (${releaseTable(params, releases)}),
+         g AS (
+           SELECT DISTINCT p.a_scv_id AS scv_id, p.a_term AS term, p.valid_from AS valid_from,
+                  p.valid_to AS valid_to
+           FROM ${db.rowsEver('scv_classification_pair')} p WHERE ${pairConflictWhere(options)}
+         )
+         SELECT strftime(r.release, '%Y-%m-%d') AS release, g.term AS label,
+                count(DISTINCT g.scv_id) AS count
+         FROM r JOIN g ON ${held('g', 'r.release')}
          GROUP BY ALL`
-      : `WITH ${classifiedCtes(db, params, releases)},
-         conflicted AS (SELECT release, variation_id FROM classified WHERE conflict = 'clinsig')
-         SELECT strftime(c.release, '%Y-%m-%d') AS release, s.term AS label, count(DISTINCT s.scv_id) AS count
-         FROM conflicted c
-         JOIN ${db.rowsEver('vcv_statement')} l ON l.variation_id = c.variation_id AND ${held('l', 'c.release')}
-         JOIN ${db.rowsEver('scv')} s ON s.variation_id = c.variation_id
-           AND s.submission_level = l.submission_level AND ${held('s', 'c.release')}
-         WHERE l.classification_type = 'PATH' AND l.node_kind = 'level' AND l.contributes
-           AND s.classification_type = 'PATH'
+      : // Each SCV's span within a conflicting root and its contributing level node. A variant
+        // has one root and one node per level at a time, so an SCV's spans never overlap and
+        // can be counted without DISTINCT. The conflicting levels' spans come first, as a small
+        // table, so the SCVs stream past it rather than being held to join.
+        `WITH ${classifiedCtes(db, params, releases)},
+         levels AS MATERIALIZED (
+           SELECT c.variation_id AS variation_id, l.submission_level AS submission_level,
+                  greatest(c.valid_from, l.valid_from) AS valid_from,
+                  nullif(least(${end('c')}, ${end('l')}), 'infinity'::DATE) AS valid_to
+           FROM roots c
+           JOIN ${vcv} l ON l.variation_id = c.variation_id AND ${overlaps('l', 'c')}
+           WHERE c.conflict = 'clinsig'
+             AND l.classification_type = 'PATH' AND l.node_kind = 'level' AND l.contributes
+         ),
+         spans AS (
+           SELECT greatest(c.valid_from, s.valid_from) AS valid_from,
+                  nullif(least(${end('c')}, ${end('s')}), 'infinity'::DATE) AS valid_to,
+                  s.term AS term
+           FROM levels c
+           JOIN ${scv} s ON s.variation_id = c.variation_id AND s.submission_level = c.submission_level
+             AND ${overlaps('s', 'c')}
+           WHERE s.classification_type = 'PATH'
+         ),
+         g AS (SELECT valid_from, valid_to, term, count(*) AS n FROM spans GROUP BY ALL)
+         SELECT strftime(r.release, '%Y-%m-%d') AS release, g.term AS label, sum(g.n) AS count
+         FROM r JOIN g ON ${held('g', 'r.release')}
          GROUP BY ALL`;
-  const rows = CountRow.array().parse(await db.query(release, sql, params.values));
+  const rows = CountRow.array().parse(await query(db, release, sql, params.values));
+  if (options.conflict !== 'pairs') {
+    for (const u of await unexplainedConflicts(db, release, releases)) {
+      if (u.conflict !== 'clinsig') continue;
+      for (const term of u.terms) rows.push({ release: u.release, label: term, count: 1 });
+    }
+  }
   const { byCode } = await pathTerms(db, release);
   const [yes, no] = CONFLICT_SCV_CATEGORIES.map((c) => c.name);
   const inConflict = merge(
@@ -349,6 +484,21 @@ async function conflictScvRows(
       count: (totals.get(r) ?? 0) - (conflicted.get(r) ?? 0),
     })),
   ];
+}
+
+// The figures' queries, one at a time: each reads millions of rows, and several at once on a
+// small instance compete for its memory. Each figure's result is cached, so they queue only once.
+let running: Promise<unknown> = Promise.resolve();
+
+function query(
+  db: Database,
+  release: string,
+  sql: string,
+  params: Parameters<Database['query']>[2] = [],
+): ReturnType<Database['query']> {
+  const run = running.then(() => db.query(release, sql, params));
+  running = run.catch(() => undefined);
+  return run;
 }
 
 /** Rows with the same release, category and label added together, in a stable order. */
