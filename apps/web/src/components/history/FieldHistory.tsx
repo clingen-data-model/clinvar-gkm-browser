@@ -1,9 +1,9 @@
 import { Popover } from '@base-ui/react/popover';
-import type { FieldPeriod } from '@cvb/shared/api';
+import { fieldHistoryRows, type FieldPeriod } from '@cvb/shared/api';
 import { ChevronDown } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { count } from '../../lib/text.ts';
-import { holdsIn, ReleaseSpan } from './ReleaseSpan.tsx';
+import { EarliestReleaseNote, holdsIn, ReleaseSpan } from './ReleaseSpan.tsx';
 
 interface Props {
   /** The field's name, e.g. "Classification": the popup's title and the trigger's name. */
@@ -12,29 +12,22 @@ interface Props {
   periods: FieldPeriod[];
   /** The release the page shows, whose period is marked. */
   shown: string;
-  /** A period's value as a link to the record as of the period's first release. */
+  /** A value's row as a link to the record as of the row's first release. */
   link: (period: FieldPeriod, children: ReactNode, close: () => void) => ReactNode;
 }
 
 /**
  * The values a field held over the releases served, behind a button beside the field saying how
  * often it changed ("3 changes"): each with the releases it held in, newest first, linking to the
- * record as of that release. Nothing when the field held one value throughout.
+ * record as of that release. Releases the record wasn't in (say, an aggregate call with no
+ * submissions of its type) are a row of their own, "none", so every step between rows is a
+ * change. Nothing when the field held one value throughout.
  */
 export function FieldHistory({ label, periods, shown, link }: Props) {
   const [open, setOpen] = useState(false);
-  if (periods.length < 2) return null;
-  // Between two periods the value changed, or the record was missing from some releases: a gap,
-  // not called a change (rare: 123 in aggregate calls over the backfill, none in SCVs).
-  const pairs = periods.slice(1).map((p, i) => [periods[i], p] as const);
-  const changes = pairs.filter(([a, b]) => a?.value !== b.value).length;
-  const gaps = pairs.filter(([a, b]) => a?.to !== b.from).length;
-  const summary = [
-    changes > 0 ? count(changes, 'change') : null,
-    gaps > 0 ? count(gaps, 'gap') : null,
-  ]
-    .filter((x) => x !== null)
-    .join(', ');
+  const rows = fieldHistoryRows(periods);
+  if (rows.length < 2) return null;
+  const summary = count(rows.length - 1, 'change');
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger
@@ -52,12 +45,17 @@ export function FieldHistory({ label, periods, shown, link }: Props) {
             </Popover.Title>
             <table>
               <tbody>
-                {[...periods].reverse().map((p) => (
+                {[...rows].reverse().map((p) => (
                   <tr key={p.from} className="align-top">
                     <td className="py-0.5 pr-3">
-                      {link(p, p.value ?? '—', () => {
-                        setOpen(false);
-                      })}
+                      {/* No link for "none": an SCV's page as of a release without it is a 404. */}
+                      {p.absent ? (
+                        <span className="text-muted-foreground italic">none</span>
+                      ) : (
+                        link(p, p.value ?? '—', () => {
+                          setOpen(false);
+                        })
+                      )}
                     </td>
                     <td className="py-0.5 pr-2 text-muted-foreground">
                       <ReleaseSpan span={p} />
@@ -69,6 +67,7 @@ export function FieldHistory({ label, periods, shown, link }: Props) {
                 ))}
               </tbody>
             </table>
+            <EarliestReleaseNote spans={rows} />
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

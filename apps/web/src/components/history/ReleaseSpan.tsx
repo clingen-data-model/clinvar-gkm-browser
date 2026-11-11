@@ -8,8 +8,9 @@ interface Span {
 }
 
 /**
- * The releases a version held in: its first, and its last (the release before the one that
- * replaced it), or "latest". "By" marks a version already held in the earliest release served.
+ * The releases a span held in: its first, and its last (the release before the one that replaced
+ * it), or "latest". A span already held in the earliest release served may go back further, so
+ * its first release gets an asterisk, which EarliestReleaseNote explains under the list.
  */
 export function ReleaseSpan({ span }: { span: Span }) {
   const { data } = useQuery(releasesQuery());
@@ -24,9 +25,29 @@ export function ReleaseSpan({ span }: { span: Span }) {
           .at(-1) ?? null);
   return (
     <span className="whitespace-nowrap">
-      {span.fromStart ? 'by ' : ''}
-      {span.from} – {to === null ? 'latest' : (last ?? `before ${to}`)}
+      {span.from}
+      {span.fromStart ? (
+        <>
+          <sup aria-hidden="true">*</sup>
+          <span className="sr-only"> (the earliest release stored)</span>
+        </>
+      ) : null}
+      {' – '}
+      {to === null ? 'latest' : (last ?? `before ${to}`)}
     </span>
+  );
+}
+
+/**
+ * The footnote to a list of spans whose first release is the earliest stored: shown, under the
+ * list, only when one is. Always visible, not a tooltip, so it reads the same on a touch screen.
+ */
+export function EarliestReleaseNote({ spans }: { spans: readonly Span[] }) {
+  if (!spans.some((s) => s.fromStart)) return null;
+  return (
+    <p className="mt-2 max-w-xs text-xs text-muted-foreground">
+      <span aria-hidden="true">* </span>The earliest release stored; this may go back further.
+    </p>
   );
 }
 

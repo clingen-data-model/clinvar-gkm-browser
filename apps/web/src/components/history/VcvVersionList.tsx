@@ -1,6 +1,6 @@
 import type { VcvVersion } from '@cvb/shared/api';
 import { Link } from '@tanstack/react-router';
-import { holdsIn, ReleaseSpan } from './ReleaseSpan.tsx';
+import { EarliestReleaseNote, holdsIn, ReleaseSpan } from './ReleaseSpan.tsx';
 
 /**
  * A variant's VCV versions, each linking to the variant as of its first release (the latest
@@ -17,17 +17,20 @@ export function VcvVersionList({
   shown: string;
 }) {
   return (
-    <ul className="text-sm">
-      {[...versions].reverse().map((v) => (
-        <li key={`${String(v.version)}-${v.from}`} className="flex gap-3 py-0.5">
-          <VcvVersionLink variationId={variationId} version={v} />
-          <span className="text-muted-foreground">
-            <ReleaseSpan span={v} />
-          </span>
-          {holdsIn(v, shown) ? <span className="text-muted-foreground">(shown)</span> : null}
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="text-sm">
+        {[...versions].reverse().map((v) => (
+          <li key={`${String(v.version)}-${v.from}`} className="flex gap-3 py-0.5">
+            <VcvVersionLink variationId={variationId} version={v} />
+            <span className="text-muted-foreground">
+              <ReleaseSpan span={v} />
+            </span>
+            {holdsIn(v, shown) ? <span className="text-muted-foreground">(shown)</span> : null}
+          </li>
+        ))}
+      </ul>
+      <EarliestReleaseNote spans={versions} />
+    </>
   );
 }
 
