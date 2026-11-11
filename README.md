@@ -67,6 +67,7 @@ docs/            Design docs and research notes
 - [Architecture](docs/architecture.md) and [stack](docs/stack.md)
 - [Data](docs/data.md): the ClinVar-GKM source, the derived model, conflicts and releases
 - [History](docs/history.md): past releases as interval tables, and viewing a record as it was
+- [Statistics](docs/stats.md): whole-ClinVar figures for slides and papers (planned)
 - [Source schema](docs/source-schema.md), [derived schema](docs/schema.md), and [the two compared](docs/upstream-vs-derived.md)
 - [API](docs/api.md): resources, filters, summaries and conflict pairs
 - [Search](docs/search.md)
