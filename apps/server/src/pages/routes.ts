@@ -2,12 +2,17 @@
 // web app takes over. The page sets its own title once its data loads.
 
 import { sep } from 'node:path';
+import { StatsSlug } from '@cvb/shared/api';
 import fastifyStatic from '@fastify/static';
 import type { FastifyPluginAsync, FastifyReply } from 'fastify';
+import { z } from 'zod';
 import type { WebApp } from './web-app.ts';
 
-/** The web app's pages (apps/web/src/routes); any other path gets index.html with a 404. */
-const PAGES = [
+/**
+ * The web app's pages (apps/web/src/routes; routes.test.ts checks every route is here); any other
+ * path gets index.html with a 404.
+ */
+export const PAGES = [
   '/',
   '/search',
   '/variants/:id',
@@ -20,7 +25,14 @@ const PAGES = [
   '/conditions/:id',
   '/conditions/:id/conflicts',
   '/schema',
+  '/stats',
+  '/stats/:slug',
 ];
+
+/** Pages whose parameter can be checked here: anything else under them is not found. */
+const PARAMS: Partial<Record<string, (params: Record<string, string>) => boolean>> = {
+  '/stats/:slug': ({ slug }) => StatsSlug.safeParse(slug).success,
+};
 
 /** Paths that are never pages, so a miss under them is a plain 404, not the app. */
 const NOT_PAGES = ['/api/', '/-/', '/assets/'] as const;
@@ -57,6 +69,13 @@ export const pageRoutes: FastifyPluginAsync<{ web: WebApp }> = async (app, { web
     },
   });
   for (const path of PAGES) {
-    app.get(path, { schema: { hide: true } }, (_request, reply) => sendPage(reply, web, true));
+    const valid = PARAMS[path];
+    app.get(path, { schema: { hide: true } }, (request, reply) =>
+      sendPage(
+        reply,
+        web,
+        valid === undefined || valid(z.record(z.string(), z.string()).parse(request.params)),
+      ),
+    );
   }
 };

@@ -291,3 +291,23 @@ test("a figure's options are in its URL, and its CSV and citation follow them", 
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('figure [role="status"]').first()).toContainText('2026-10-18');
 });
+
+test('a chart downloads as SVG and PNG under the content security policy', async ({ page }) => {
+  const response = await page.goto('/stats/aggregate-classification');
+  expect(response?.status()).toBe(200);
+  const errors: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+  });
+  for (const format of ['SVG', 'PNG']) {
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('button', { name: format }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe(
+      `clinvar-stats-aggregate-classification-2026-10-18.${format.toLowerCase()}`,
+    );
+    expect(await download.failure()).toBeNull();
+  }
+  expect(errors).toEqual([]);
+});
