@@ -67,10 +67,14 @@ fi
 data_image="$REGISTRY/clinvar-gkm-data:$data_tag"
 app_image="$REGISTRY/clinvar-gkm-browser:$app_prefix-$commit"
 
-if podman image exists "$data_image"; then
-  echo "data image $data_image: already built"
+# The tag doesn't name the platform, so a data image built for another one (say, an arm64 image to
+# try locally) is rebuilt for this one rather than reused.
+arch="$(cut -d/ -f2 <<<"$PLATFORM")"
+if podman image exists "$data_image" \
+  && [[ $(podman image inspect --format '{{.Architecture}}' "$data_image") == "$arch" ]]; then
+  echo "data image $data_image: already built for $arch"
 else
-  echo "data image $data_image: building"
+  echo "data image $data_image: building for $arch"
   if $history; then
     # The server reads each release's row counts from the files' footers, which holds only while
     # every release keeps the row-count rule (scripts/history.sh); refuse to ship one that doesn't.
