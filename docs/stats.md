@@ -70,18 +70,18 @@ These differ enough that the figures offer a choice, in a dropdown that's part o
 
 | Definition | Variants, 2026-10-18 | SCVs, both sides |
 | --- | --- | --- |
-| **ClinVar's aggregate** (the default): the aggregate is conflicting and a contributing SCV is P/LP | 31,131 | the contributing SCVs of those variants |
-| **Pairs, same condition** (ClinVar Miner's level 5; our conflict pages' default): two SCVs of the variant are P/LP and VUS/LB/B and share a condition | 19,208 | 63,963 |
-| **Pairs, any condition** | 43,283 | 196,224 |
+| **ClinVar's aggregate** (the default): the aggregate is conflicting and a contributing SCV is P/LP | 31,131 | 116,455, the contributing SCVs of those variants |
+| **Pairs, same condition** (ClinVar Miner's level 5; our conflict pages' default): two SCVs of the variant are P/LP and VUS/LB/B and share a condition | 18,304 | 59,072 |
+| **Pairs, any condition** | 41,739 | 180,223 |
 
-The aggregate counts only contributing SCVs; pairs count every submission level, so variant 9339 is a pair conflict and not an aggregate one. Pairs come from `scv_classification_pair` ([data.md](data.md#conflicts)), with the same flagged-SCV rule as the conflict pages.
+The aggregate counts only contributing SCVs; pairs count every submission level, so variant 9339 is a pair conflict and not an aggregate one. Pairs come from `scv_classification_pair` ([data.md](data.md#conflicts)) under the conflict pages' defaults: two different submitters, neither SCV flagged. The condition rule is a choice too: same condition (the default), same or either unspecified, or any.
 
 ## API
 
 - `GET /api/stats`: the figures, each with slug, title, description and whether it's one release or several.
 - `GET /api/stats/:slug`: one figure's data. `release` for a one-release figure; `releases` (a list) or `every=month` (the first release of each month) for a trend; figure options such as `conflict=aggregate|pairs-same-condition|pairs-any-condition`. The response is long-format rows (release, category, count, and for categories the original labels), the totals, and the definitions. `format=csv` gives the rows as CSV.
 
-**Computed per request, no new tables** (decided 10 November 2026). The figures don't depend on the request beyond their parameters, and the data changes only when a new image is deployed, so results are cached in memory by figure and parameters. Measured on this Mac (14 cores, over the history of 19 releases, 2026-06-27 to 2026-10-31): the aggregate classification of every release, 0.6 s; VUS SCVs of every release, 0.4 s; level-5 pairs of every release, under 0.1 s; `submitter-agreement` for one release, 0.8 s. Cloud Run has 4 vCPUs, so these need measuring there; if one is too slow, `history.sh` can write a small stats table per release instead.
+**Computed per request, no new tables** (decided 10 November 2026). The figures don't depend on the request beyond their parameters, and the data changes only when a new image is deployed, so results are cached in memory by figure and parameters. Measured on this Mac (14 cores, over the history of 19 releases, 2026-06-27 to 2026-10-31): the aggregate classification of every release, 0.6 s; VUS SCVs of every release, 0.4 s; level-5 pairs of every release, under 0.1 s; `submitter-agreement` for one release, 0.8 s. Through the server (10 November 2026, the same Mac, each figure over all 19 releases, uncached): aggregate classification 1.6 s; VUS SCVs 0.7 s; SCVs in an aggregate conflict 1.2 s; pair conflicts 0.1 s; `submitter-agreement` 0.3 s and `single-submitter-classification` 0.4 s for one release. Variants in an aggregate conflict reuse the aggregate classification's cached counts. Cloud Run has 4 vCPUs, so these need measuring there; if one is too slow, `history.sh` can write a small stats table per release instead.
 
 The figures' SQL is in `src/api/stats/queries.ts`, one entry per figure in a registry, as filters are.
 

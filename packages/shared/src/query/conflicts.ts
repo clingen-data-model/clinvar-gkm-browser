@@ -87,10 +87,8 @@ export function pairCtes(input: PairInput, params: SqlParams): string {
     pairFilterWhere(input.filters, input.filterOptions, params, 'a'),
     pairFilterWhere(input.filters, input.filterOptions, params, 'b'),
   ];
-  if (options.conditionMatch === 'strict') where.push('p.same_condition');
-  if (options.conditionMatch === 'wildcard') {
-    where.push('(p.same_condition OR p.unspecified_condition)');
-  }
+  const condition = conditionMatchWhere(options.conditionMatch, 'p');
+  if (condition !== null) where.push(condition);
   if (options.excludeFlagged) {
     where.push(`p.a_submission_level <> 'FLAG'`, `p.b_submission_level <> 'FLAG'`);
   }
@@ -108,6 +106,13 @@ export function pairCtes(input: PairInput, params: SqlParams): string {
       FROM scv_classification_pair p
       WHERE ${where.join('\n        AND ')}
     )`;
+}
+
+/** The condition rule over stored pairs (alias `p`), or null when any condition will do. */
+export function conditionMatchWhere(match: ConditionMatch, p: string): string | null {
+  if (match === 'strict') return `${p}.same_condition`;
+  if (match === 'wildcard') return `(${p}.same_condition OR ${p}.unspecified_condition)`;
+  return null;
 }
 
 /** WHERE over pairs for the level options. */
