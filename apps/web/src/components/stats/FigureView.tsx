@@ -338,9 +338,6 @@ export function CategoryContents({ data }: { data: StatsResponse }) {
 
 const BQ_TOOLS =
   'https://github.com/clingen-data-model/clinvar-ingest-bq-tools/blob/2ca57d89bf1d9e93a68d01bf43fac5c02fdc0dc8/scripts/dataset-preparation/00-setup-translation-tables.sql#L30-L99';
-const STATS_DOC =
-  'https://github.com/clingen-data-model/clinvar-gkm-browser/blob/main/docs/stats.md';
-
 const CLASSIFICATION_NOTE = (
   <p>
     A variant’s aggregate classification is ClinVar’s, for germline pathogenicity: one term, or its
@@ -398,9 +395,6 @@ export function FigureDefinitions({ data }: { data: StatsResponse }) {
             : ` Conditions: ${data.options['condition_match'] === 'strict' ? 'the two SCVs share one' : data.options['condition_match'] === 'wildcard' ? 'they share one, or either has none specified' : 'any'}.`}
         </p>
       )}
-      <p>
-        How each figure is defined, and why: <a href={STATS_DOC}>docs/stats.md</a>.
-      </p>
     </div>
   );
 }

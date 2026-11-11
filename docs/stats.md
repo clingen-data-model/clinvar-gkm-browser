@@ -93,7 +93,7 @@ Built 11 November 2026 (the `stats` branch).
 - **`/stats/<slug>`:** one figure with its options (which releases, what counts as a conflict, the condition rule), all in the URL, so a link reproduces exactly what was cited. An option the figure doesn't take is left out of the request rather than sent.
 - Both follow the header's release picker: a trend runs up to the release chosen.
 
-A figure's page has: the chart; its definitions, with links to bq-tools' vocabulary and this doc; a citation (the figure, the releases, ClinVar-GKM, the page's URL with its options, the reader's date) and the counts as CSV or JSON; a table of the numbers (for accessibility, and for copying into a paper); and what each category contains in the release shown, every label counted with its count, from the same rows as the chart.
+A figure's page has: the chart; its definitions, with a link to bq-tools' vocabulary at the commit followed (not to this doc: `main` moves on from what a deployed app counts, and the page itself carries every rule); a citation (the figure, the releases, ClinVar-GKM, the page's URL with its options, the reader's date) and the counts as CSV or JSON; a table of the numbers (for accessibility, and for copying into a paper); and what each category contains in the release shown, every label counted with its count, from the same rows as the chart.
 
 ### Charts
 
