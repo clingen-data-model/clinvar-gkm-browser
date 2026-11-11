@@ -57,7 +57,7 @@ VCV 559557 went from version 11 to 12 in 2026-10-18 when its only no-assertion-c
 
 ## How it was measured
 
-**The release history's log** (`data/history/log/`, upstream's records as published; [history.md](../history.md#the-log)), with DuckDB. `$L` is the log's directory.
+**The release history's log** (upstream's records as published; [history.md](../history.md#the-log)), with DuckDB. `$L` stands for the log.
 
 ```sql
 -- Every SCV key, with the release it was added in and the one that closed it, if any.
@@ -93,5 +93,3 @@ For the removals with a new version, compare the SCV keys the old and new versio
 python3 -I docs/research/vcv-versions-extract.py ClinVarVCVRelease_2026-0928.xml.gz <out dir> 2026-09-28 1828 5 762 853 576 612 119
 python3 -I docs/research/vcv-versions-compare.py <out dir> 2026-09-23 2026-09-28 1828 5 762 853 576 612 119
 ```
-
-The release files and the cut records were kept on the development Mac (`data/clinvar-vcv-xml/`), not committed.
