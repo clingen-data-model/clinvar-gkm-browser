@@ -12,6 +12,8 @@ import {
   ScvRow,
   ScvVersion,
   SearchResponse,
+  StatsResponse,
+  type StatsSlug,
   SubmitterDetail,
   SummaryResponse,
   VariantDetail,
@@ -23,6 +25,7 @@ import {
 } from '@cvb/shared/api';
 import { queryOptions } from '@tanstack/react-query';
 import { z } from 'zod';
+import type { StatsSearch } from '../stats.ts';
 import { getJson, type Params } from './client.ts';
 
 const forever = { staleTime: Infinity, gcTime: 30 * 60_000 } as const;
@@ -189,3 +192,13 @@ export const scvHistoryQuery = (ids: readonly number[]) =>
       }),
     staleTime: 60_000,
   });
+
+/** A statistics figure's counts; options left out take the figure's defaults. */
+export const statsQuery = (release: Release, slug: StatsSlug, options: StatsSearch) => {
+  const asked = Object.fromEntries(Object.entries(options).filter(([, v]) => v !== undefined));
+  return queryOptions({
+    queryKey: [release, 'stats', slug, asked],
+    queryFn: () => getJson(`/stats/${slug}`, StatsResponse, { release, ...asked }),
+    ...forever,
+  });
+};

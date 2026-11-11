@@ -15,6 +15,8 @@ import { Route as SearchRouteImport } from './routes/search'
 import { Route as ConditionsIdRouteImport } from './routes/conditions.$id'
 import { Route as GenesIdRouteImport } from './routes/genes.$id'
 import { Route as ScvsIdRouteImport } from './routes/scvs.$id'
+import { Route as StatsIndexRouteImport } from './routes/stats.index'
+import { Route as StatsSlugRouteImport } from './routes/stats.$slug'
 import { Route as SubmittersIdRouteImport } from './routes/submitters.$id'
 import { Route as VariantsIdRouteImport } from './routes/variants.$id'
 import { Route as ConditionsIdIndexRouteImport } from './routes/conditions.$id.index'
@@ -53,6 +55,16 @@ const GenesIdRoute = GenesIdRouteImport.update({
 const ScvsIdRoute = ScvsIdRouteImport.update({
   id: '/scvs/$id',
   path: '/scvs/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsIndexRoute = StatsIndexRouteImport.update({
+  id: '/stats/',
+  path: '/stats/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StatsSlugRoute = StatsSlugRouteImport.update({
+  id: '/stats/$slug',
+  path: '/stats/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SubmittersIdRoute = SubmittersIdRouteImport.update({
@@ -108,8 +120,10 @@ export interface FileRoutesByFullPath {
   '/conditions/$id': typeof ConditionsIdRouteWithChildren
   '/genes/$id': typeof GenesIdRouteWithChildren
   '/scvs/$id': typeof ScvsIdRoute
+  '/stats/$slug': typeof StatsSlugRoute
   '/submitters/$id': typeof SubmittersIdRouteWithChildren
   '/variants/$id': typeof VariantsIdRoute
+  '/stats/': typeof StatsIndexRoute
   '/conditions/$id/conflicts': typeof ConditionsIdConflictsRoute
   '/genes/$id/conflicts': typeof GenesIdConflictsRoute
   '/submitters/$id/conflicts': typeof SubmittersIdConflictsRoute
@@ -123,7 +137,9 @@ export interface FileRoutesByTo {
   '/schema': typeof SchemaRoute
   '/search': typeof SearchRoute
   '/scvs/$id': typeof ScvsIdRoute
+  '/stats/$slug': typeof StatsSlugRoute
   '/variants/$id': typeof VariantsIdRoute
+  '/stats': typeof StatsIndexRoute
   '/conditions/$id/conflicts': typeof ConditionsIdConflictsRoute
   '/genes/$id/conflicts': typeof GenesIdConflictsRoute
   '/submitters/$id/conflicts': typeof SubmittersIdConflictsRoute
@@ -140,8 +156,10 @@ export interface FileRoutesById {
   '/conditions/$id': typeof ConditionsIdRouteWithChildren
   '/genes/$id': typeof GenesIdRouteWithChildren
   '/scvs/$id': typeof ScvsIdRoute
+  '/stats/$slug': typeof StatsSlugRoute
   '/submitters/$id': typeof SubmittersIdRouteWithChildren
   '/variants/$id': typeof VariantsIdRoute
+  '/stats/': typeof StatsIndexRoute
   '/conditions/$id/conflicts': typeof ConditionsIdConflictsRoute
   '/genes/$id/conflicts': typeof GenesIdConflictsRoute
   '/submitters/$id/conflicts': typeof SubmittersIdConflictsRoute
@@ -159,8 +177,10 @@ export interface FileRouteTypes {
     | '/conditions/$id'
     | '/genes/$id'
     | '/scvs/$id'
+    | '/stats/$slug'
     | '/submitters/$id'
     | '/variants/$id'
+    | '/stats/'
     | '/conditions/$id/conflicts'
     | '/genes/$id/conflicts'
     | '/submitters/$id/conflicts'
@@ -174,7 +194,9 @@ export interface FileRouteTypes {
     | '/schema'
     | '/search'
     | '/scvs/$id'
+    | '/stats/$slug'
     | '/variants/$id'
+    | '/stats'
     | '/conditions/$id/conflicts'
     | '/genes/$id/conflicts'
     | '/submitters/$id/conflicts'
@@ -190,8 +212,10 @@ export interface FileRouteTypes {
     | '/conditions/$id'
     | '/genes/$id'
     | '/scvs/$id'
+    | '/stats/$slug'
     | '/submitters/$id'
     | '/variants/$id'
+    | '/stats/'
     | '/conditions/$id/conflicts'
     | '/genes/$id/conflicts'
     | '/submitters/$id/conflicts'
@@ -208,8 +232,10 @@ export interface RootRouteChildren {
   ConditionsIdRoute: typeof ConditionsIdRouteWithChildren
   GenesIdRoute: typeof GenesIdRouteWithChildren
   ScvsIdRoute: typeof ScvsIdRoute
+  StatsSlugRoute: typeof StatsSlugRoute
   SubmittersIdRoute: typeof SubmittersIdRouteWithChildren
   VariantsIdRoute: typeof VariantsIdRoute
+  StatsIndexRoute: typeof StatsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -254,6 +280,20 @@ declare module '@tanstack/react-router' {
       path: '/scvs/$id'
       fullPath: '/scvs/$id'
       preLoaderRoute: typeof ScvsIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats/': {
+      id: '/stats/'
+      path: '/stats'
+      fullPath: '/stats/'
+      preLoaderRoute: typeof StatsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stats/$slug': {
+      id: '/stats/$slug'
+      path: '/stats/$slug'
+      fullPath: '/stats/$slug'
+      preLoaderRoute: typeof StatsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/submitters/$id': {
@@ -372,8 +412,10 @@ const rootRouteChildren: RootRouteChildren = {
   ConditionsIdRoute: ConditionsIdRouteWithChildren,
   GenesIdRoute: GenesIdRouteWithChildren,
   ScvsIdRoute: ScvsIdRoute,
+  StatsSlugRoute: StatsSlugRoute,
   SubmittersIdRoute: SubmittersIdRouteWithChildren,
   VariantsIdRoute: VariantsIdRoute,
+  StatsIndexRoute: StatsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

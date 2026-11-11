@@ -162,7 +162,7 @@ Candidates for M5–M6 and for showing to NCBI. Ordered by our current guess at 
 3. **Conflict lifecycle:** when a conflict started, which side changed, how long it took to resolve. Conflicts open longest in a gene, for VCEP triage.
 4. **Stale classification finder:** SCVs whose date last evaluated is old while newer evidence exists (other labs reclassified, an expert panel classified, or the condition's mapping changed).
 5. **Somatic views:** oncogenicity and clinical impact facets, AMP/ASCO/CAP tiers, therapies.
-6. **Trend dashboards:** submissions by method, lane, review status and classification over time.
+6. **Trend dashboards:** submissions by method, lane, review status and classification over time. The first figures, for citing in slides and papers, are in [stats.md](stats.md).
 7. **Bulk export in more formats:** GA4GH JSON (VA-Spec statements), parquet, VCF for variant lists.
 
 ## Later

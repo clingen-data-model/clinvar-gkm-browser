@@ -5,4 +5,5 @@ export * from './lists.ts';
 export * from './problem.ts';
 export * from './release.ts';
 export * from './search.ts';
+export * from './stats.ts';
 export * from './vocabulary.ts';

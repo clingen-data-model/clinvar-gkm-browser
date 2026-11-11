@@ -12,6 +12,9 @@ import {
   list,
   PairRow,
   SearchResponse,
+  STATS_FIGURES,
+  StatsFigureList,
+  StatsResponse,
   SummaryResponse,
   VariantRow,
   VcvVersion,
@@ -446,5 +449,97 @@ describe('query edge cases', () => {
       SummaryResponse,
     );
     expect(body.query).not.toHaveProperty('classification_type');
+  });
+});
+
+describe('stats', () => {
+  const stats = async (slug: string, query = '') =>
+    (await get(`/api/v1/stats/${slug}${query}`, StatsResponse)).body;
+  /** Counts per category in a release. */
+  const byCategory = (data: z.infer<typeof StatsResponse>, release = FIXTURE_RELEASE) => {
+    const counts: Record<string, number> = {};
+    for (const r of data.rows.filter((row) => row.release === release)) {
+      counts[r.category] = (counts[r.category] ?? 0) + r.count;
+    }
+    return counts;
+  };
+  const total = (counts: Record<string, number>) =>
+    Object.values(counts).reduce((a, b) => a + b, 0);
+
+  it('lists the figures with their options', async () => {
+    const { body } = await get('/api/v1/stats', StatsFigureList);
+    expect(body.data.map((f) => f.slug)).toEqual(STATS_FIGURES.map((f) => f.slug));
+    expect(body.data.find((f) => f.slug === 'clinsig-conflict-variants')?.options).toEqual({
+      every: 'release',
+      conflict: 'aggregate',
+    });
+  });
+
+  it('puts every row of every figure in a listed category, none of them Unmapped', async () => {
+    for (const { slug } of STATS_FIGURES) {
+      const data = await stats(slug);
+      expect(data.releases).toEqual([FIXTURE_RELEASE]);
+      expect(data.rows.length).toBeGreaterThan(0);
+      const names = data.categories.map((c) => c.name);
+      expect(names).not.toContain('Unmapped');
+      for (const row of data.rows) expect(names).toContain(row.category);
+    }
+  });
+
+  it('counts the same variants and SCVs across figures', async () => {
+    const aggregate = byCategory(await stats('aggregate-classification'));
+    const agreement = byCategory(await stats('submitter-agreement'));
+    const single = byCategory(await stats('single-submitter-classification'));
+    const conflicts = byCategory(await stats('clinsig-conflict-variants'));
+    expect(total(agreement)).toBe(total(aggregate));
+    expect(total(single)).toBe(agreement['Single submitter']);
+    expect(total(conflicts)).toBe(total(aggregate));
+    expect(conflicts['Clinically significant conflict']).toBe(
+      aggregate['Conflict: P/LP vs VUS/LB/B'] ?? 0,
+    );
+    const scvs = byCategory(await stats('vus-submissions'));
+    const inConflict = byCategory(await stats('clinsig-conflict-submissions'));
+    expect(total(inConflict)).toBe(total(scvs));
+  });
+
+  it('counts pair conflicts under each condition rule, the stricter finding fewer', async () => {
+    const counts = [];
+    for (const rule of ['strict', 'wildcard', 'any']) {
+      const data = await stats(
+        'clinsig-conflict-variants',
+        `?conflict=pairs&condition_match=${rule}`,
+      );
+      expect(data.options).toEqual({ every: 'release', conflict: 'pairs', condition_match: rule });
+      counts.push(byCategory(data)['Clinically significant conflict'] ?? 0);
+    }
+    expect(counts[0]).toBeGreaterThan(0);
+    expect(counts).toEqual([...counts].sort((a, b) => a - b));
+  });
+
+  it('refuses options a figure does not take', async () => {
+    for (const url of [
+      '/api/v1/stats/submitter-agreement?every=month',
+      '/api/v1/stats/aggregate-classification?conflict=pairs',
+      '/api/v1/stats/clinsig-conflict-variants?condition_match=any',
+    ]) {
+      const { status } = await get(url, ProblemDetails);
+      expect(status).toBe(400);
+    }
+    expect((await get('/api/v1/stats/nothing', ProblemDetails)).status).toBe(400);
+  });
+
+  it('gives the rows as CSV', async () => {
+    const response = await server.app.inject({
+      method: 'GET',
+      url: '/api/v1/stats/aggregate-classification?format=csv',
+      headers: { host: 'localhost' },
+    });
+    expect(response.headers['content-type']).toBe('text/csv; charset=utf-8');
+    const lines = response.body.trim().split('\r\n');
+    expect(response.headers['content-disposition']).toContain(
+      'clinvar-stats-aggregate-classification-',
+    );
+    expect(lines[0]).toBe('release,category,label,count');
+    expect(lines.length).toBe((await stats('aggregate-classification')).rows.length + 1);
   });
 });

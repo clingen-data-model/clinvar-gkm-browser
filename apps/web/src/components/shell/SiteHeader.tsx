@@ -14,6 +14,9 @@ export function SiteHeader() {
           <SearchBox />
         </div>
         <nav aria-label="Site" className="flex items-center gap-4">
+          <Link to="/stats" search={(s) => ({ release: s.release })} className="text-sm">
+            Statistics
+          </Link>
           <a href="/api/v1/docs" className="text-sm">
             API
           </a>

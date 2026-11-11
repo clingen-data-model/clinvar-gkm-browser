@@ -13,6 +13,7 @@ import {
   ScvDetail,
   ScvHistory,
   ScvVersion,
+  StatsResponse,
   VcvVersion,
 } from '@cvb/shared/api';
 import pino from 'pino';
@@ -299,6 +300,41 @@ describe('field history', () => {
       });
       expect(response.statusCode, ids.slice(0, 20)).toBe(400);
     }
+  });
+});
+
+describe('stats over a history', () => {
+  it("counts each release's variants, following a reclassified aggregate", async () => {
+    const { body } = await get(
+      '/api/v1/stats/aggregate-classification?every=release',
+      StatsResponse,
+    );
+    expect(body.releases).toEqual([FIXTURE_RELEASE, NEXT]);
+    const count = (release: string, category: string) =>
+      body.rows
+        .filter((r) => r.release === release && r.category === category)
+        .reduce((n, r) => n + r.count, 0);
+    const all = (release: string) =>
+      body.rows.filter((r) => r.release === release).reduce((n, r) => n + r.count, 0);
+    // VARIANT's call goes from a conflict to Pathogenic/Likely pathogenic.
+    expect(all(NEXT)).toBe(all(FIXTURE_RELEASE));
+    const conflicts = (release: string) =>
+      count(release, 'Conflict: P/LP vs VUS/LB/B') + count(release, 'Conflict: VUS vs LB/B');
+    expect(conflicts(NEXT)).toBe(conflicts(FIXTURE_RELEASE) - 1);
+    expect(count(NEXT, 'Likely pathogenic')).toBe(count(FIXTURE_RELEASE, 'Likely pathogenic') + 1);
+  });
+
+  it('counts a trend up to the release asked for, and one-release figures in it', async () => {
+    const trend = await get(
+      `/api/v1/stats/vus-submissions?release=${FIXTURE_RELEASE}`,
+      StatsResponse,
+    );
+    expect(trend.body.releases).toEqual([FIXTURE_RELEASE]);
+    const one = await get(
+      `/api/v1/stats/submitter-agreement?release=${FIXTURE_RELEASE}`,
+      StatsResponse,
+    );
+    expect(new Set(one.body.rows.map((r) => r.release))).toEqual(new Set([FIXTURE_RELEASE]));
   });
 });
 

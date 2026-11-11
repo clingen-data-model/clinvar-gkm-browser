@@ -21,6 +21,13 @@ import {
   PairRow,
   SearchQuery,
   SearchResponse,
+  statsFigure,
+  StatsFigureList,
+  statsOptions,
+  StatsQuery,
+  StatsResponse,
+  StatsSlug,
+  STATS_FIGURES,
   SummaryResponse,
   VariantRow,
   VcvVersion,
@@ -44,6 +51,7 @@ import { listPairs, pairOrder } from './pairs/queries.ts';
 import { listScvs, scvDetail, scvOrder, scvVersions, variantScvs } from './scvs/queries.ts';
 import { summarize } from './summaries/queries.ts';
 import { search } from './search/queries.ts';
+import { statsCsv, statsData } from './stats/queries.ts';
 import { listVariants, variantDetail, variantOrder, vcvVersions } from './variants/queries.ts';
 import { vocabularies } from './vocabulary/queries.ts';
 
@@ -385,6 +393,60 @@ export const api: FastifyPluginAsyncZod<{ db: Database }> = async (app, { db }) 
         data: rows,
         page: { limit: parsed.query.limit, offset: parsed.query.offset, total },
       };
+    },
+  );
+
+  app.get(
+    '/stats',
+    {
+      schema: {
+        tags: ['stats'],
+        description:
+          'Whole-ClinVar figures for citing (docs/stats.md): each with its slug, whether it covers one release or a trend, and its options with their defaults.',
+        response: { 200: StatsFigureList },
+      },
+    },
+    () => ({
+      data: STATS_FIGURES.map((f) => ({
+        slug: f.slug,
+        title: f.title,
+        description: f.description,
+        span: f.span,
+        unit: f.unit,
+        options: Object.fromEntries(Object.entries(f.defaults).map(([k, v]) => [k, String(v)])),
+      })),
+    }),
+  );
+
+  app.get(
+    '/stats/:slug',
+    {
+      schema: {
+        tags: ['stats'],
+        description:
+          "A figure's counts per release, category and label, with each category's rule. A one-release figure counts `release`; a trend counts the releases up to it. format=csv gives the rows as CSV.",
+        params: z.object({ slug: StatsSlug }),
+        querystring: StatsQuery,
+        response: { 200: StatsResponse.or(z.string()) },
+      },
+    },
+    async (req, reply) => {
+      const figure = statsFigure(req.params.slug);
+      const { release: asked, format, ...rest } = req.query;
+      const options = statsOptions(figure, rest);
+      if (!options.ok) return sendProblem(reply, invalid(options.problems));
+      const release = db.resolve(asked);
+      const data = await statsData(db, figure.slug, release, options.options);
+      if (format === 'csv') {
+        return reply
+          .type('text/csv; charset=utf-8')
+          .header(
+            'content-disposition',
+            `attachment; filename="clinvar-stats-${figure.slug}-${release}.csv"`,
+          )
+          .send(statsCsv(data));
+      }
+      return data;
     },
   );
 
