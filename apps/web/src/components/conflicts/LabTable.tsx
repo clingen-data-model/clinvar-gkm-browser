@@ -6,6 +6,7 @@ import type { Params } from '../../lib/api/client.ts';
 import { pairSummaryQuery } from '../../lib/api/queries.ts';
 import { keepComparison } from '../../lib/conflicts.ts';
 import { count } from '../../lib/text.ts';
+import { useRelease } from '../../lib/release.ts';
 
 export const LABS_PER_PAGE = 20;
 
@@ -54,12 +55,13 @@ interface Props {
  * to a head-to-head comparison.
  */
 export function LabTable({ base, submitterId, page, q }: Props) {
+  const release = useRelease();
   const navigate = useNavigate();
   const [text, setText] = useState(q ?? '');
-  const levels = useSuspenseQuery(pairSummaryQuery(labTableParams(base, page, q))).data;
+  const levels = useSuspenseQuery(pairSummaryQuery(release, labTableParams(base, page, q))).data;
   const labs = [...new Set(levels.rows.map((r) => String(r['b.submitter'])))];
   const [conflicting, shared] = useSuspenseQueries({
-    queries: labTotalsParams(base, levels).map((p) => pairSummaryQuery(p)),
+    queries: labTotalsParams(base, levels).map((p) => pairSummaryQuery(release, p)),
   }).map((q) => q.data.rows);
   const valueOf = (rows: typeof levels.rows, lab: string, level?: string) =>
     Number(

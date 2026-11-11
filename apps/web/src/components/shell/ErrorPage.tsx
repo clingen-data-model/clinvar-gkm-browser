@@ -1,10 +1,14 @@
 import { useRouter, type ErrorComponentProps } from '@tanstack/react-router';
 import { ApiError } from '../../lib/api/client.ts';
+import { servedReleasesOf } from '../../lib/release.ts';
 import { Page } from './Page.tsx';
+import { UnknownReleasePage } from './UnknownReleasePage.tsx';
 
 /** Shown when a page's data can't be loaded or rendering fails. */
 export function ErrorPage({ error }: ErrorComponentProps) {
   const router = useRouter();
+  const served = servedReleasesOf(error);
+  if (served !== undefined) return <UnknownReleasePage releases={served} />;
   if (error instanceof ApiError && error.status === 503) {
     // Expected before the first download, or when a query runs too long.
     return (

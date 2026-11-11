@@ -15,6 +15,7 @@ import {
 import { searchOf } from '../lib/route-search.ts';
 import { comparisonParams, ConflictSearch, keepComparison, termOf } from '../lib/conflicts.ts';
 import { orNotFound } from '../lib/route-params.ts';
+import { useRelease } from '../lib/release.ts';
 
 /** Two labs head to head: where they overlap, how their classifications compare, and the pairs. */
 export const Route = createFileRoute('/submitters/$id/vs/$otherId')({
@@ -29,16 +30,17 @@ export const Route = createFileRoute('/submitters/$id/vs/$otherId')({
   validateSearch: ConflictSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: ({ context: { queryClient }, params, location }) => {
+  loader: ({ context: { queryClient, release }, params, location }) => {
     const deps = searchOf(ConflictSearch, location);
     const base = baseParams(params.id, params.otherId, deps);
     return orNotFound(
       Promise.all([
-        queryClient.query(submitterQuery(params.otherId)),
-        queryClient.query(variantSummaryQuery({ ...base, group_by: 'conflict_level' })),
-        queryClient.query(pairSummaryQuery(gridParams(base))),
+        queryClient.query(submitterQuery(release, params.otherId)),
+        queryClient.query(variantSummaryQuery(release, { ...base, group_by: 'conflict_level' })),
+        queryClient.query(pairSummaryQuery(release, gridParams(base))),
         queryClient.query(
           pairListQuery(
+            release,
             pairListParams(
               pairParams(base, deps, params.id === params.otherId),
               deps.pairs_page ?? 1,
@@ -86,16 +88,17 @@ function selectedCell(search: ConflictSearch, self: boolean): [string, string] |
 }
 
 function HeadToHead() {
+  const release = useRelease();
   const { id, otherId } = Route.useParams();
   const search = Route.useSearch();
-  const name = useSuspenseQuery(submitterQuery(id)).data.data.name;
-  const other = useSuspenseQuery(submitterQuery(otherId)).data.data.name;
-  const vocab = useSuspenseQuery(vocabulariesQuery()).data.data;
+  const name = useSuspenseQuery(submitterQuery(release, id)).data.data.name;
+  const other = useSuspenseQuery(submitterQuery(release, otherId)).data.data.name;
+  const vocab = useSuspenseQuery(vocabulariesQuery(release)).data.data;
   const base = baseParams(id, otherId, search);
   const scorecard = useSuspenseQuery(
-    variantSummaryQuery({ ...base, group_by: 'conflict_level' }),
+    variantSummaryQuery(release, { ...base, group_by: 'conflict_level' }),
   ).data;
-  const grid = useSuspenseQuery(pairSummaryQuery(gridParams(base))).data;
+  const grid = useSuspenseQuery(pairSummaryQuery(release, gridParams(base))).data;
   const self = id === otherId;
   const cell = selectedCell(search, self);
   const cellLabel = (code: string) => termOf(vocab, `PATH:${code}`)?.label ?? code;

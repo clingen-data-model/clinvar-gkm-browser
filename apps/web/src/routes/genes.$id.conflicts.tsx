@@ -12,9 +12,10 @@ export const Route = createFileRoute('/genes/$id/conflicts')({
   validateSearch: ConflictSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: ({ context: { queryClient }, params, location }) =>
+  loader: ({ context: { queryClient, release }, params, location }) =>
     prefetchEntityConflicts(
       queryClient,
+      release,
       geneFilters(params.id, relationshipsOf(searchOf(GeneSearch, location).gene_relationship)),
       searchOf(ConflictSearch, location),
     ),

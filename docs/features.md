@@ -140,8 +140,8 @@ Conflict comparison by lab was ClinVar Miner's most used feature, so it comes fi
 | # | Item | Notes |
 | --- | --- | --- |
 | 5.1 | **Weekly updates:** in-app update check, download, derivation, switch | M4 in [plan.md](plan.md#milestones-proposed) |
-| 5.2 | **Release selector:** any page against an older release still on disk | ClinVar Miner's `date` parameter, before it dropped history |
-| 5.3 | **History and diffs** | Trial feature 1 below; needs a history design (interval tables or DuckLake snapshots) and data accumulated over releases |
+| 5.2 | **Release selector:** any page against an older release still on disk | ClinVar Miner's `date` parameter, before it dropped history. Built: the header's release picker, over the release history ([history.md](history.md#in-the-app)) |
+| 5.3 | **History and diffs** | Trial feature 1 below. Built so far: VCV and SCV versions, and the field history of the aggregate classification and review status and of SCV classifications ([history.md](history.md#in-the-app)). Diffs between releases are still to do |
 
 ### Left out, or needing outside data
 

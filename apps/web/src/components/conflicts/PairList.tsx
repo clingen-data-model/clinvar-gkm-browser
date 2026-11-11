@@ -6,6 +6,7 @@ import { pairListQuery } from '../../lib/api/queries.ts';
 import { LEVEL_CLASS } from '../../lib/conflicts.ts';
 import { Stars } from '../classification/Stars.tsx';
 import { TermPill } from '../classification/TermPill.tsx';
+import { useRelease } from '../../lib/release.ts';
 
 export const PAIRS_PER_PAGE = 25;
 
@@ -71,7 +72,10 @@ export function PairList({
   showSubmitterA,
   narrowedTo,
 }: Props) {
-  const { data } = useSuspenseQuery(pairListQuery(pairListParams(params, page, conflictsOnly)));
+  const release = useRelease();
+  const { data } = useSuspenseQuery(
+    pairListQuery(release, pairListParams(params, page, conflictsOnly)),
+  );
   const levels = new Map(vocab.conflictLevels.map((l) => [l.level, l.label]));
   const total = data.page.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAIRS_PER_PAGE));

@@ -1,5 +1,5 @@
 import { Outlet, useRouter } from '@tanstack/react-router';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { BusyIndicator, useBusy } from './BusyIndicator.tsx';
 import { SiteFooter } from './SiteFooter.tsx';
 import { SiteHeader } from './SiteHeader.tsx';
@@ -25,7 +25,8 @@ function useFocusHeadingOnNavigate() {
   );
 }
 
-export function AppShell() {
+/** The frame: header, the page (the matched route's, unless `children` replaces it), footer. */
+export function AppShell({ children }: { children?: ReactNode }) {
   useFocusHeadingOnNavigate();
   const { busy, slow } = useBusy();
   return (
@@ -44,7 +45,7 @@ export function AppShell() {
         aria-busy={busy}
         className={`flex-1 transition-opacity focus:outline-none ${busy ? 'opacity-60' : ''}`}
       >
-        <Outlet />
+        {children ?? <Outlet />}
       </main>
       <BusyIndicator busy={busy} slow={slow} />
       <SiteFooter />

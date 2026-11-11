@@ -6,6 +6,8 @@
 # succeeds. M0 tooling; the server runs the same SQL through @duckdb/node-api from M1.
 #
 # Usage: scripts/derive.sh [release]   (default: the newest directory under source/)
+# DERIVE_SOURCE_DIR and DERIVE_DEST_DIR replace the source and release directories, e.g. to derive
+# a release converted from JSON (scripts/convert-state.sh) somewhere other than derived/.
 set -euo pipefail
 
 DATA_DIR="${CLINVAR_DATA_DIR:-./data}"
@@ -13,9 +15,9 @@ SCHEMA_VERSION=1
 SQL_DIR="$(cd "$(dirname "$0")/../packages/derive/sql" && pwd)"
 
 release="${1:-$(ls "$DATA_DIR/source" | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | sort | tail -1)}"
-src="$(cd "$DATA_DIR/source/$release" && pwd)"
-dest_dir="$DATA_DIR/derived/$SCHEMA_VERSION/$release"
-tmp_dir="$DATA_DIR/tmp/derive-$release"
+src="$(cd "${DERIVE_SOURCE_DIR:-$DATA_DIR/source/$release}" && pwd)"
+dest_dir="${DERIVE_DEST_DIR:-$DATA_DIR/derived/$SCHEMA_VERSION/$release}"
+tmp_dir="$DATA_DIR/tmp/derive-$release${DERIVE_DEST_DIR:+-$(basename "$(dirname "$DERIVE_DEST_DIR")")}"
 out_dir="$tmp_dir/out"
 
 # A complete download has its manifest (fetch-source.sh writes it last); check the files against
@@ -33,7 +35,7 @@ fi
 
 # One derivation per release at a time; the lock goes, with the scratch files, when this exits.
 mkdir -p "$DATA_DIR/tmp"
-lock="$DATA_DIR/tmp/derive-$release.lock"
+lock="$tmp_dir.lock"
 if ! mkdir "$lock" 2>/dev/null; then
   echo "another derivation of $release is running (or left $lock behind)" >&2
   exit 1

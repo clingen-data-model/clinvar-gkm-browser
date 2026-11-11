@@ -4,6 +4,7 @@ import type { Params } from '../../lib/api/client.ts';
 import { scvListQuery } from '../../lib/api/queries.ts';
 import { useTypeLabels } from '../../lib/vocabulary.ts';
 import { ScvTable } from './ScvTable.tsx';
+import { useRelease } from '../../lib/release.ts';
 
 export const PAGE_SIZE = 50;
 
@@ -12,8 +13,9 @@ export const PAGE_SIZE = 50;
  * previous pages through the `page` search parameter of the current route.
  */
 export function ScvListSection({ filters, page }: { filters: Params; page: number }) {
+  const release = useRelease();
   const typeLabels = useTypeLabels();
-  const { data } = useSuspenseQuery(scvListQuery(scvListParams(filters, page)));
+  const { data } = useSuspenseQuery(scvListQuery(release, scvListParams(filters, page)));
   const total = data.page.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   return (
@@ -21,7 +23,7 @@ export function ScvListSection({ filters, page }: { filters: Params; page: numbe
       <h2 id="scvs" className="mb-3">
         Submissions <span className="text-muted-foreground">({total.toLocaleString()})</span>
       </h2>
-      <ScvTable rows={data.data} showVariant typeLabels={typeLabels} />
+      <ScvTable rows={data.data} showVariant shown={data.release} typeLabels={typeLabels} />
       <nav aria-label="Pages" className="mt-4 flex items-center gap-4 text-sm">
         {page > 1 ? (
           <Link to="." search={(s) => ({ ...s, page: String(page - 1) })}>

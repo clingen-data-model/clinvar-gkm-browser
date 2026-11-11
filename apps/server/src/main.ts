@@ -3,7 +3,7 @@
 
 import { ConfigError, loadConfig } from './config.ts';
 import { Database } from './data/database.ts';
-import { findReleases, type SkippedRelease } from './data/releases.ts';
+import { findHistory, findReleases, type SkippedRelease } from './data/releases.ts';
 import { createLogger } from './logging.ts';
 import { loadWebApp } from './pages/web-app.ts';
 import { buildServer } from './server.ts';
@@ -28,6 +28,14 @@ const db = await Database.open(
   releases,
   skip,
 );
+const history = findHistory(config.dataDir);
+if (history !== null) {
+  try {
+    await db.addHistory(history);
+  } catch (error) {
+    logger.error({ dir: history, error }, 'could not read the release history');
+  }
+}
 const { current, releases: served } = db.available();
 if (config.pinnedRelease !== null && current !== config.pinnedRelease) {
   logger.warn(

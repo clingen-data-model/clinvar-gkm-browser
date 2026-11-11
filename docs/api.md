@@ -31,6 +31,10 @@ All under `/api/v1`. `{id}` is the integer ID unless noted.
 | Vocabularies | `/vocabularies/{name}` | `/vocabularies` | | classification types, terms and buckets, review statuses and stars, submission levels, collection methods, variant types, consequences |
 | Search | | `/search?q=` | | detects the input's shape (accession, rsID, HGVS, name) and returns typed matches |
 
+**Versions** span every release served, not just the one `release` names. `/variants/{id}/versions` lists a variant's VCV versions, and `/scvs/{id}/versions` an SCV's versions (each as of its last release, with the variant's VCV versions that held at the same time). Each version has `from`, the first release that has it, and `to`, the first that no longer does (null while current). `fromStart` marks a version already held in the earliest release served, so it may be older. Without a release history ([history.md](history.md)) they list only the release's own version.
+
+**Field history** spans every release served too, as periods: a value a field held, with `from`, `to` and `fromStart` as above. Consecutive releases with the same value make one period; a change of value, or a release without the record, starts the next. `/variants/{id}/history` gives the aggregate (VCV root) call's `classification` and `reviewStatus` per classification type, found by variant and type rather than statement ID, since a new VCV version names its statements anew; it is empty for a variant without an aggregate call. `/scvs/history?ids=` gives the `classification` of up to 500 SCVs (one page of a list), leaving out IDs no release served has.
+
 **Sub-resources** are shortcuts for a list with one filter fixed. `/variants/{id}/scvs` is `/scvs?variant={id}`, and `/genes/{id}/variants` is `/variants?gene={id}`. They exist for readable links; the list endpoint does the work.
 
 **Item responses** include what a detail page needs in one request. A variant comes with its MANE HGVS, genes, VRS member, cross-references, aggregate calls per classification type, and SCV counts by classification bucket. Lists return compact rows.
@@ -45,7 +49,7 @@ One vocabulary, shared by every list and summary endpoint that has the field. In
 
 | Filter | Applies to | Meaning |
 | --- | --- | --- |
-| `release` | all | ClinVar release date; default latest |
+| `release` | all | ClinVar release date, one of those served (`GET /releases`); default latest. Any other date is a 404 whose problem JSON lists the releases served in `releases` ([history.md](history.md#in-the-app)) |
 | `variant` | SCVs, variants | variation ID |
 | `gene` | SCVs, variants | NCBI gene ID, through the variant's gene list |
 | `gene_relationship` | SCVs, variants | which relationships to the gene count, any of `single`, `overlap`, `spanning`, `near`, `asserted` (default `single,overlap`; see open question 2) |
@@ -163,7 +167,7 @@ Present in local mode, absent or behind authentication when hosted:
 
 ## Errors and limits
 
-- **Errors use RFC 9457 problem JSON,** with the offending parameter named: unknown filter, bad value, unknown release, a dimension a resource doesn't support.
+- **Errors use RFC 9457 problem JSON,** with the offending parameter named: unknown filter, bad value, unknown release, a dimension a resource doesn't support. An unknown release's 404 adds `releases`, the releases served, oldest first.
 - **Every query has a timeout** (default 30 s locally) and is cancelled when the client disconnects.
 - **Releases are immutable,** so responses carry `ETag` and `Cache-Control` keyed on the release. The browser and any proxy can cache them.
 

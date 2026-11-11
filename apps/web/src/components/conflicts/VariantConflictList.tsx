@@ -5,6 +5,7 @@ import type { Params } from '../../lib/api/client.ts';
 import { variantListQuery } from '../../lib/api/queries.ts';
 import { LEVEL_CLASS } from '../../lib/conflicts.ts';
 import { Stars } from '../classification/Stars.tsx';
+import { useRelease } from '../../lib/release.ts';
 
 export const VARIANTS_PER_PAGE = 25;
 
@@ -28,7 +29,8 @@ export function VariantConflictList({
   page: number;
   vocab: Vocabularies;
 }) {
-  const { data } = useSuspenseQuery(variantListQuery(variantConflictParams(params, page)));
+  const release = useRelease();
+  const { data } = useSuspenseQuery(variantListQuery(release, variantConflictParams(params, page)));
   const statuses = new Map(vocab.conflictStatuses.map((s) => [s.status, s.label]));
   const total = data.page.total ?? 0;
   const pages = Math.max(1, Math.ceil(total / VARIANTS_PER_PAGE));

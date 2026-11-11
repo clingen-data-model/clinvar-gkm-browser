@@ -11,9 +11,10 @@ export const Route = createFileRoute('/conditions/$id/conflicts')({
   validateSearch: ConflictSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: ({ context: { queryClient }, params, location }) =>
+  loader: ({ context: { queryClient, release }, params, location }) =>
     prefetchEntityConflicts(
       queryClient,
+      release,
       { condition: params.id },
       searchOf(ConflictSearch, location),
     ),

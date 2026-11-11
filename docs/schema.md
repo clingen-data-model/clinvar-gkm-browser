@@ -127,8 +127,6 @@ erDiagram
   condition |o--o{ scv : "condition_id"
   conditionSet |o--o{ scv : "condition_set_id"
   gene |o..o{ scv : "gene_context_id, not enforced"
-  vcv_statement ||--o{ scv : "vcv_statement_id"
-  rcv_statement ||--o{ scv : "rcv_statement_id"
   scv ||--o{ scv_condition : ""
   condition ||--o{ scv_condition : "condition_id"
   conditionSet |o--o{ scv_condition : "via_condition_set_id"
@@ -159,7 +157,7 @@ The vocabulary tables (`classification_type`, `classification_term`, `submission
 | `submitter` | `id` | organization | `submitter`, as published |
 | `vcv_statement` | `statement_id`, checked not indexed | VCV statement node: root, level or tier | `vcv` + its proposition + `vcv_evidenceLine` |
 | `rcv_statement` | `statement_id`, checked not indexed | RCV statement node | `rcv` + its proposition + `rcv_evidenceLine` |
-| `scv` | `scv_id` | submission, with its citations and submitted conditions | `scv` + its proposition + the VCV/RCV statements citing it |
+| `scv` | `scv_id` | submission, with its citations and submitted conditions | `scv` + its proposition, and the tier and RCV accession of the statements citing it |
 | `scv_condition` | (`scv_id`, `condition_id`) | condition the SCV is about, sets expanded | the proposition's object |
 | `scv_classification_pair` | (`a_scv_id`, `b_scv_id`), checked not indexed | every ordered pair of SCVs conflict detection compares, with its level and condition flags ([data.md](data.md#conflicts)) | derived from `scv` |
 
@@ -169,7 +167,7 @@ A VCV or RCV accession is a tree: one root per classification type, citing one n
 
 ```
 VCV000000010.141-G-PATH            root    classification 'Pathogenic'
-├── VCV000000010.141-G-PATH-CP     level   contributes = true    ← 45 scv rows have this vcv_statement_id
+├── VCV000000010.141-G-PATH-CP     level   contributes = true    ← 45 scv rows (variant 10, PATH, CP)
 ├── VCV000000010.141-G-PATH-NOCP   level   contributes = false   ← 8 scv rows
 └── VCV000000010.141-G-PATH-FLAG   level   contributes = false   ← 2 scv rows
 VCV…-S-SCI                         root    (somatic clinical impact, illustrative)
@@ -177,7 +175,11 @@ VCV…-S-SCI                         root    (somatic clinical impact, illustrat
     └── VCV…-S-SCI-CP-T1           tier                          ← scv rows
 ```
 
-Every SCV is cited by exactly one VCV node and one RCV node (checked against the 2026-10-18 data). Those become `scv.vcv_statement_id` and `scv.rcv_statement_id`, both NOT NULL. The node's variant, classification type and level always match the SCV's (also checked), and `validate.sql` re-checks this every load.
+Every SCV is cited by exactly one VCV node and one RCV node (checked against the 2026-10-18 data), and the node's variant, classification type and level always match the SCV's. So an SCV's nodes are found by its own columns, not stored:
+- **VCV:** the node with the SCV's `variation_id`, `classification_type`, `submission_level` and `tier`;
+- **RCV:** the same, within the SCV's `rcv_accession`.
+
+`scv.tier` (somatic clinical impact only) and `scv.rcv_accession` come from the citing nodes' IDs. The IDs themselves aren't stored because they carry the VCV's or RCV's version, which goes up whenever any SCV under it changes. Every SCV of a variant would then change with each new submission, and history would fill with copies of unchanged rows ([history.md](history.md#rows-that-change-when-their-record-didnt); decided 29 October 2026). On 2026-10-18 the join finds exactly the citing nodes for all 6,853,781 SCVs, and `validate.sql` re-checks this against the evidence lines every load.
 
 ## How the load works
 

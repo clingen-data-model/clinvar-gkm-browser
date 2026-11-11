@@ -4,6 +4,7 @@ import {
   ProblemDetails,
   ReleaseList,
   ScvDetail,
+  ScvHistory,
   ScvRow,
   SubmitterDetail,
   VariantDetail,
@@ -13,6 +14,7 @@ import {
   SearchResponse,
   SummaryResponse,
   VariantRow,
+  VcvVersion,
   Vocabularies,
 } from '@cvb/shared/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -44,10 +46,49 @@ describe('releases', () => {
     expect(body.data.map((r) => r.clinvarRelease)).toEqual([FIXTURE_RELEASE]);
   });
 
-  it('refuses a release that is not on disk', async () => {
-    const { status, body } = await get('/api/v1/variants/10?release=2020-01-01', ProblemDetails);
-    expect(status).toBe(404);
-    expect(body.detail).toBe('Release 2020-01-01 is not available.');
+  it('refuses a release not served, naming the releases that are', async () => {
+    for (const release of ['2020-01-01', '2030-01-01']) {
+      const { status, body } = await get(`/api/v1/variants/10?release=${release}`, ProblemDetails);
+      expect(status).toBe(404);
+      expect(body.detail).toContain(`ClinVar release ${release} isn't served.`);
+      expect(body.releases).toEqual([FIXTURE_RELEASE]);
+    }
+  });
+
+  it('answers the release named', async () => {
+    const { status, body } = await get(
+      `/api/v1/variants/10?release=${FIXTURE_RELEASE}`,
+      item(VariantDetail),
+    );
+    expect(status).toBe(200);
+    expect(body.release).toBe(FIXTURE_RELEASE);
+  });
+
+  it('gives one period per field from the one release when there is no history', async () => {
+    const { status, body } = await get(
+      '/api/v1/scvs/history?ids=198337',
+      z.object({ data: z.array(ScvHistory) }),
+    );
+    expect(status).toBe(200);
+    expect(body.data).toEqual([
+      {
+        scvId: 198337,
+        classification: [
+          { value: 'Uncertain significance', from: FIXTURE_RELEASE, to: null, fromStart: true },
+        ],
+      },
+    ]);
+  });
+
+  it('lists versions from the one release when there is no history', async () => {
+    const { status, body } = await get(
+      '/api/v1/variants/10/versions',
+      z.object({ data: z.array(VcvVersion) }),
+    );
+    expect(status).toBe(200);
+    expect(body.data).toEqual([
+      expect.objectContaining({ from: FIXTURE_RELEASE, to: null, fromStart: true }),
+    ]);
   });
 });
 

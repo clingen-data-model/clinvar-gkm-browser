@@ -47,6 +47,62 @@ test('an unknown variant shows not found with a 404', async ({ page }) => {
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Not found');
 });
 
+test('a release not stored says so, asks the API nothing for it, and links the releases stored', async ({
+  page,
+}) => {
+  const asked: string[] = [];
+  page.on('request', (request) => {
+    const url = request.url();
+    if (url.includes('/api/') && url.includes('release=2020-01-01')) asked.push(url);
+  });
+  await page.goto('/variants/10?release=2020-01-01');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Release not available');
+  await expect(page.getByText('as of ClinVar release 2020-01-01')).toBeVisible();
+  expect(asked).toEqual([]);
+  await expect(page.getByText('ClinVar release not available')).toBeVisible();
+  // The release after it, and the only one stored: this same page as of it.
+  await page.getByRole('link', { name: '2026-10-18 (latest)' }).first().click();
+  await expect(page).toHaveURL(/\/variants\/10$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'NM_000410.4(HFE):c.187C>G (p.His63Asp)',
+  );
+});
+
+test('a malformed release says it is not a release date, and keeps the other parameters', async ({
+  page,
+}) => {
+  await page.goto('/search?q=hfe&release=last-week');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Release not available');
+  await expect(page.getByText('“last-week” isn’t a ClinVar release date')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Nearest' })).toHaveCount(0);
+  await page.getByRole('link', { name: '2026-10-18 (latest)' }).click();
+  await expect(page).toHaveURL(/\/search\?q=hfe$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Results for “hfe”');
+});
+
+test('a release the API no longer serves gets the same page, not "not found"', async ({ page }) => {
+  // The browser's list of releases is out of date: it still names one the server doesn't serve.
+  const release = (clinvarRelease: string) => ({
+    clinvarRelease,
+    parquetBuildDate: '2026-10-15',
+    gkmSchemaVersion: '1.1.0',
+    gkmDataset: 'fixture',
+    derivedSchema: 1,
+    loadedAt: '2026-10-30 00:00:00',
+    tables: [],
+  });
+  await page.route('**/api/v1/releases', (route) =>
+    route.fulfill({
+      json: { current: '2026-10-18', data: [release('2026-10-11'), release('2026-10-18')] },
+    }),
+  );
+  await page.goto('/variants/10?release=2026-10-11');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Release not available');
+  // The server's list, not the browser's: only the release it serves.
+  await expect(page.getByRole('link', { name: '2026-10-11' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '2026-10-18 (latest)' }).first()).toBeVisible();
+});
+
 for (const path of [
   '/',
   '/variants/10',
@@ -54,6 +110,7 @@ for (const path of [
   '/genes/3077/conflicts',
   '/search?q=hfe',
   '/schema',
+  '/variants/10?release=2020-01-01',
 ]) {
   test(`${path} has no accessibility violations`, async ({ page }) => {
     await page.goto(path);

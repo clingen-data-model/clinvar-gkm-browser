@@ -9,11 +9,15 @@ const BASE = '/api/v1';
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string | null;
+  /** When the release asked for isn't served: the releases that are. */
+  readonly releases: string[] | undefined;
 
-  constructor(status: number, path: string, detail: string | null) {
+  constructor(status: number, path: string, problem: ProblemDetails | null) {
+    const detail = problem?.detail ?? null;
     super(detail ?? `The API answered ${String(status)} for ${path}`);
     this.status = status;
     this.detail = detail;
+    this.releases = problem?.releases;
   }
 }
 
@@ -39,7 +43,7 @@ export async function getJson<Schema extends z.ZodType>(
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) {
     const problem = ProblemDetails.safeParse(await response.json().catch(() => null));
-    throw new ApiError(response.status, url, problem.success ? problem.data.detail : null);
+    throw new ApiError(response.status, url, problem.success ? problem.data : null);
   }
   return schema.parse(await response.json());
 }

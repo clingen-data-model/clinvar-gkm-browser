@@ -11,4 +11,6 @@
 apps/web/node_modules
 apps/web/dist
 !packages/shared/**
+# The /schema page draws its diagrams from this doc (apps/web/src/lib/doc-diagrams.ts).
+!docs/upstream-vs-derived.md
 packages/shared/node_modules

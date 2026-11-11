@@ -14,27 +14,31 @@ import {
 } from '../lib/api/queries.ts';
 import { searchOf } from '../lib/route-search.ts';
 import { comparisonParams, ConflictSearch, termOf } from '../lib/conflicts.ts';
+import { useRelease } from '../lib/release.ts';
 
 /** One lab against every other: its conflicts, its classifications against theirs, and the labs. */
 export const Route = createFileRoute('/submitters/$id/conflicts')({
   validateSearch: ConflictSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: async ({ context: { queryClient }, params, location }) => {
+  loader: async ({ context: { queryClient, release }, params, location }) => {
     const deps = searchOf(ConflictSearch, location);
     const base = { 'a.submitter': params.id, ...comparisonParams(deps) };
     await Promise.all([
-      queryClient.query(variantSummaryQuery({ ...base, group_by: 'conflict_level' })),
-      queryClient.query(pairSummaryQuery(gridParams(base))),
+      queryClient.query(variantSummaryQuery(release, { ...base, group_by: 'conflict_level' })),
+      queryClient.query(pairSummaryQuery(release, gridParams(base))),
       queryClient
-        .query(pairSummaryQuery(labTableParams(base, deps.labs_page ?? 1, deps.labs_q)))
+        .query(pairSummaryQuery(release, labTableParams(base, deps.labs_page ?? 1, deps.labs_q)))
         .then((levels) =>
           Promise.all(
-            labTotalsParams(base, levels).map((p) => queryClient.query(pairSummaryQuery(p))),
+            labTotalsParams(base, levels).map((p) =>
+              queryClient.query(pairSummaryQuery(release, p)),
+            ),
           ),
         ),
       queryClient.query(
         pairListQuery(
+          release,
           pairListParams(pairParams(base, deps), deps.pairs_page ?? 1, deps.show !== 'all'),
         ),
       ),
@@ -52,15 +56,16 @@ function pairParams(base: Record<string, string | number | undefined>, search: C
 }
 
 function SubmitterConflicts() {
+  const release = useRelease();
   const { id } = Route.useParams();
   const search = Route.useSearch();
-  const name = useSuspenseQuery(submitterQuery(id)).data.data.name;
-  const vocab = useSuspenseQuery(vocabulariesQuery()).data.data;
+  const name = useSuspenseQuery(submitterQuery(release, id)).data.data.name;
+  const vocab = useSuspenseQuery(vocabulariesQuery(release)).data.data;
   const base = { 'a.submitter': id, ...comparisonParams(search) };
   const scorecard = useSuspenseQuery(
-    variantSummaryQuery({ ...base, group_by: 'conflict_level' }),
+    variantSummaryQuery(release, { ...base, group_by: 'conflict_level' }),
   ).data;
-  const grid = useSuspenseQuery(pairSummaryQuery(gridParams(base))).data;
+  const grid = useSuspenseQuery(pairSummaryQuery(release, gridParams(base))).data;
   const cell =
     search['a.term'] !== undefined && search['b.term'] !== undefined
       ? ([search['a.term'], search['b.term']] as const)

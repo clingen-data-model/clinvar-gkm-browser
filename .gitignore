@@ -17,3 +17,5 @@ playwright-report/
 docs/research/clinvar-gkm-bench/
 docs/research/clinvar-miner-build-subset.py
 logs/
+# DuckDB spills here when a session sets no temp_directory
+.tmp/

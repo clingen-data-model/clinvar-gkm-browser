@@ -242,3 +242,59 @@ export const VariantRow = z.object({
   buckets: BucketCounts,
 });
 export type VariantRow = z.infer<typeof VariantRow>;
+
+/**
+ * A span of releases: `from` the first release that has it, `to` the first that no longer does
+ * (null while it holds). `fromStart` when `from` is the earliest release available, so it may
+ * be older than that.
+ */
+const ReleaseSpan = z.object({
+  from: z.iso.date(),
+  to: z.iso.date().nullable(),
+  fromStart: z.boolean(),
+});
+
+/** A VCV version of a variant, and the releases it held in. */
+export const VcvVersion = ReleaseSpan.extend({ version: z.int().nullable() });
+export type VcvVersion = z.infer<typeof VcvVersion>;
+
+/** A version of an SCV, as of its last release, and the variant's VCV versions it overlapped. */
+export const ScvVersion = ReleaseSpan.extend({
+  version: z.int(),
+  variationId: z.int(),
+  classification: z.string().nullable(),
+  reviewStatus: z.string().nullable(),
+  dateLastEvaluated: z.iso.date().nullable(),
+  vcvVersions: z.array(VcvVersion),
+});
+export type ScvVersion = z.infer<typeof ScvVersion>;
+
+/**
+ * A value a field held, and the releases it held in. Consecutive releases with the same value
+ * make one period; a change of value, or a release without the record, starts the next.
+ */
+export const FieldPeriod = ReleaseSpan.extend({ value: z.string().nullable() });
+export type FieldPeriod = z.infer<typeof FieldPeriod>;
+
+/** The periods of a variant's aggregate (VCV root) call for one classification type, oldest first. */
+export const AggregateHistory = z.object({
+  classificationType: z.string(),
+  classification: z.array(FieldPeriod),
+  reviewStatus: z.array(FieldPeriod),
+});
+export type AggregateHistory = z.infer<typeof AggregateHistory>;
+
+/** The periods of an SCV's classification (ClinVar's text as submitted), oldest first. */
+export const ScvHistory = z.object({
+  scvId: z.int(),
+  classification: z.array(FieldPeriod),
+});
+export type ScvHistory = z.infer<typeof ScvHistory>;
+
+/** Up to 500 SCV IDs, comma-separated (one page of an SCV list), and the release. */
+export const ScvIdsQuery = z.object({
+  release: z.iso.date().optional(),
+  ids: z
+    .string()
+    .regex(/^[1-9]\d{0,9}(,[1-9]\d{0,9}){0,499}$/, 'ids is 1 to 500 SCV IDs, comma-separated.'),
+});

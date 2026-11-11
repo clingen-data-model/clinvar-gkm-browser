@@ -5,15 +5,23 @@ import { Stars } from '../components/classification/Stars.tsx';
 import { TermPill } from '../components/classification/TermPill.tsx';
 import { Page } from '../components/shell/Page.tsx';
 import { Facts } from '../components/ui/Facts.tsx';
-import { scvQuery, vocabulariesQuery } from '../lib/api/queries.ts';
+import { ScvVersionTable } from '../components/history/ScvVersionTable.tsx';
+import { scvQuery, scvVersionsQuery, vocabulariesQuery } from '../lib/api/queries.ts';
 import { idParams, orNotFound } from '../lib/route-params.ts';
 import { useTypeLabels } from '../lib/vocabulary.ts';
+import { useRelease } from '../lib/release.ts';
 
 export const Route = createFileRoute('/scvs/$id')({
   params: idParams,
-  loader: ({ context: { queryClient }, params }) =>
+  // The release isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
+  shouldReload: true,
+  loader: ({ context: { queryClient, release }, params }) =>
     orNotFound(
-      Promise.all([queryClient.query(scvQuery(params.id)), queryClient.query(vocabulariesQuery())]),
+      Promise.all([
+        queryClient.query(scvQuery(release, params.id)),
+        queryClient.query(scvVersionsQuery(params.id)),
+        queryClient.query(vocabulariesQuery(release)),
+      ]),
     ),
   component: ScvPage,
 });
@@ -28,8 +36,10 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function ScvPage() {
+  const release = useRelease();
   const { id } = Route.useParams();
-  const scv = useSuspenseQuery(scvQuery(id)).data.data;
+  const { release: shown, data: scv } = useSuspenseQuery(scvQuery(release, id)).data;
+  const versions = useSuspenseQuery(scvVersionsQuery(id)).data.data;
   const typeLabels = useTypeLabels();
   return (
     <Page
@@ -141,6 +151,13 @@ function ScvPage() {
           </Row>
         )}
       </dl>
+
+      <section aria-labelledby="versions" className="mt-10">
+        <h2 id="versions" className="mb-3">
+          Versions
+        </h2>
+        <ScvVersionTable versions={versions} shown={shown} />
+      </section>
     </Page>
   );
 }

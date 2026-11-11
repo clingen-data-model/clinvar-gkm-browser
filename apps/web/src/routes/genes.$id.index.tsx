@@ -10,6 +10,7 @@ import { orNotFound } from '../lib/route-params.ts';
 import { searchOf } from '../lib/route-search.ts';
 import { useTypeLabels } from '../lib/vocabulary.ts';
 import { GeneSearch, geneFilters, relationshipsOf } from '../lib/gene.ts';
+import { useRelease } from '../lib/release.ts';
 
 /** The Overview tab's own state: the SCV list's page, and the submitter table's search and page. */
 const OverviewSearch = PageSearch.extend({
@@ -21,20 +22,21 @@ export const Route = createFileRoute('/genes/$id/')({
   validateSearch: OverviewSearch,
   // URL state isn't in loaderDeps (lib/route-search.ts), so rerun on every change of it.
   shouldReload: true,
-  loader: ({ context: { queryClient }, params, location }) => {
+  loader: ({ context: { queryClient, release }, params, location }) => {
     const search = searchOf(OverviewSearch, location);
     const relationships = relationshipsOf(searchOf(GeneSearch, location).gene_relationship);
     const filters = geneFilters(params.id, relationships);
     return orNotFound(
       Promise.all([
-        queryClient.query(geneQuery(params.id, relationships)),
+        queryClient.query(geneQuery(release, params.id, relationships)),
         queryClient.query(
           scvSummaryQuery(
+            release,
             submitterCountsParams(filters, search.submitters_page ?? 1, search.submitters_q),
           ),
         ),
-        queryClient.query(scvListQuery(scvListParams(filters, search.page ?? 1))),
-        queryClient.query(vocabulariesQuery()),
+        queryClient.query(scvListQuery(release, scvListParams(filters, search.page ?? 1))),
+        queryClient.query(vocabulariesQuery(release)),
       ]),
     );
   },
@@ -43,12 +45,13 @@ export const Route = createFileRoute('/genes/$id/')({
 
 /** The Overview tab: submitters and their classifications, classification totals, and the SCVs. */
 function GeneOverview() {
+  const release = useRelease();
   const { id } = Route.useParams();
   const search = Route.useSearch();
   const page = search.page ?? 1;
   const relationships = relationshipsOf(search.gene_relationship);
-  const gene = useSuspenseQuery(geneQuery(id, relationships)).data.data;
-  const vocab = useSuspenseQuery(vocabulariesQuery()).data.data;
+  const gene = useSuspenseQuery(geneQuery(release, id, relationships)).data.data;
+  const vocab = useSuspenseQuery(vocabulariesQuery(release)).data.data;
   const typeLabels = useTypeLabels();
   const filters = geneFilters(id, relationships);
   return (

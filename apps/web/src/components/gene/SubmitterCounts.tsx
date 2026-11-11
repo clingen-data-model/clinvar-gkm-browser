@@ -6,6 +6,7 @@ import type { Params } from '../../lib/api/client.ts';
 import { scvSummaryQuery } from '../../lib/api/queries.ts';
 import { termOf } from '../../lib/conflicts.ts';
 import { TermPill } from '../classification/TermPill.tsx';
+import { useRelease } from '../../lib/release.ts';
 
 export const SUBMITTERS_PER_PAGE = 20;
 
@@ -57,9 +58,12 @@ interface Props {
  * by germline significance, with P and LP (and B and LB) counted together.
  */
 export function SubmitterCounts({ filters, vocab, page, q }: Props) {
+  const release = useRelease();
   const navigate = useNavigate();
   const [text, setText] = useState(q ?? '');
-  const summary = useSuspenseQuery(scvSummaryQuery(submitterCountsParams(filters, page, q))).data;
+  const summary = useSuspenseQuery(
+    scvSummaryQuery(release, submitterCountsParams(filters, page, q)),
+  ).data;
   const names = summary.dimensions[0]?.labels ?? {};
   // Rows come ranked by the submitter's total, so insertion order is the table's order.
   const bySubmitter = new Map<string, Record<Column, number>>();
