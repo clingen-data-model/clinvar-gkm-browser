@@ -78,12 +78,12 @@ The aggregate counts only contributing SCVs; pairs count every submission level,
 
 ## API
 
-- `GET /api/stats`: the figures, each with slug, title, description and whether it's one release or several.
-- `GET /api/stats/:slug`: one figure's data. `release` for a one-release figure; `releases` (a list) or `every=month` (the first release of each month) for a trend; figure options such as `conflict=aggregate|pairs-same-condition|pairs-any-condition`. The response is long-format rows (release, category, count, and for categories the original labels), the totals, and the definitions. `format=csv` gives the rows as CSV.
+- `GET /api/v1/stats`: the figures, each with its slug, title, description, whether it covers one release or a trend, and its options with their defaults.
+- `GET /api/v1/stats/{slug}`: one figure's counts as long-format rows (release, category, label, count), with the releases counted and each category's rule in display order. `release` is the release counted, or a trend's last; `every` (`release`, or `month` for the last release of each month) picks a trend's releases; the conflict figures take `conflict` (`aggregate` or `pairs`) and, with pairs, `condition_match` (`strict`, `wildcard`, `any`). An option a figure doesn't take is a 400. `format=csv` gives the rows as CSV. [api.md](api.md#resources) has the same.
 
 **Computed per request, no new tables** (decided 10 November 2026). The figures don't depend on the request beyond their parameters, and the data changes only when a new image is deployed, so results are cached in memory by figure and parameters. Measured on this Mac (14 cores, over the history of 19 releases, 2026-06-27 to 2026-10-31): the aggregate classification of every release, 0.6 s; VUS SCVs of every release, 0.4 s; level-5 pairs of every release, under 0.1 s; `submitter-agreement` for one release, 0.8 s. Through the server (10 November 2026, the same Mac, each figure over all 19 releases, uncached): aggregate classification 1.6 s; VUS SCVs 0.7 s; SCVs in an aggregate conflict 1.2 s; pair conflicts 0.1 s; `submitter-agreement` 0.3 s and `single-submitter-classification` 0.4 s for one release. Variants in an aggregate conflict reuse the aggregate classification's cached counts. Cloud Run has 4 vCPUs, so these need measuring there; if one is too slow, `history.sh` can write a small stats table per release instead.
 
-The figures' SQL is in `src/api/stats/queries.ts`, one entry per figure in a registry, as filters are.
+The figures are listed, with their options and categories, in `packages/shared/src/api/stats.ts`; their SQL is in `apps/server/src/api/stats/queries.ts`.
 
 ## Pages
 
