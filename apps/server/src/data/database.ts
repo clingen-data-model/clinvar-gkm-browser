@@ -182,8 +182,9 @@ export class Database {
           )
         ).getRowObjectsJson(),
       );
-      // A closings file names its rows by the table's natural key, plus valid_from and release.
-      const tables: { name: string; key: string[] }[] = [];
+      // A closings file names its rows by the table's natural key, plus valid_from and release; `on`
+      // matches a closing to the row it closes.
+      const tables: { name: string; on: string }[] = [];
       for (const name of readdirSync(join(dir, 'added')).filter(isIdentifier).sort()) {
         const columns = z
           .object({ name: z.string().refine(isIdentifier) })
@@ -196,7 +197,8 @@ export class Database {
             ).getRowObjectsJson(),
           );
         const key = columns.map((c) => c.name).filter((c) => c !== 'valid_from' && c !== 'release');
-        tables.push({ name, key });
+        const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
+        tables.push({ name, on: `${on} AND c.valid_from = a.release` });
       }
       const plain = readdirSync(join(dir, 'plain'))
         .filter((f) => f.endsWith('.parquet'))
@@ -207,8 +209,9 @@ export class Database {
       // so files of one being applied, or left by a failed apply, are of releases after the last.
       const last = releases.at(-1)?.release;
       if (last === undefined) throw new Error('the release history lists no releases');
-      // A table's rows as of a release are those added by then less those closed by then, since a
-      // row is closed at most once. Each release's rows are in their own files, and a file's footer
+      // A table's rows as of a release are those added by then less those closed by then: the
+      // row-count rule, that a closing closes exactly one open row, which scripts/history.sh checks
+      // before listing a release. Each release's rows are in their own files, and a file's footer
       // holds its row count, so this reads no data; counting each release's views took 1.7 s a
       // release on 4 threads. Reading every footer also fails on a file that isn't parquet, so a
       // broken history still fails here, before anything is served.
@@ -258,13 +261,11 @@ export class Database {
         const schema = schemaName(date, 'h');
         await connection.run(`CREATE SCHEMA ${schema}`);
         created.push(schema);
-        for (const { name, key } of tables) {
-          const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
+        for (const { name, on } of tables) {
           await connection.run(
             `CREATE VIEW ${schema}.${name} AS
              SELECT a.* EXCLUDE (release) FROM ${files(dir, 'added', name)} a
-             ANTI JOIN ${files(dir, 'closed', name)} c
-               ON ${on} AND c.valid_from = a.release AND c.release <= DATE '${date}'
+             ANTI JOIN ${files(dir, 'closed', name)} c ON ${on} AND c.release <= DATE '${date}'
              WHERE a.release <= DATE '${date}'`,
           );
         }
@@ -304,14 +305,12 @@ export class Database {
       // Every row ever, with the releases it held in: the versions of a record.
       await connection.run('CREATE SCHEMA history');
       created.push('history');
-      for (const { name, key } of tables) {
-        const on = key.map((k) => `c.${k} IS NOT DISTINCT FROM a.${k}`).join(' AND ');
+      for (const { name, on } of tables) {
         await connection.run(
           `CREATE VIEW history.${name} AS
            SELECT a.* EXCLUDE (release), a.release AS valid_from, c.release AS valid_to
            FROM ${files(dir, 'added', name)} a
-           LEFT JOIN ${files(dir, 'closed', name)} c
-             ON ${on} AND c.valid_from = a.release AND c.release <= DATE '${last}'
+           LEFT JOIN ${files(dir, 'closed', name)} c ON ${on} AND c.release <= DATE '${last}'
            WHERE a.release <= DATE '${last}'`,
         );
       }

@@ -75,7 +75,7 @@ The other docs:
 | M3 | Export, API, private lists | Streamed TSV export of any list; OpenAPI docs; private variant lists (identifier lists and VCF SNVs first, then indels); SQL console with saved queries and the schema browser | A 100k-row export streams without loading in memory; a 10k-line VCF matches in seconds |
 | M4 | Updates and image | In-app update check, download, derivation, validation, atomic swap, release selector; the linux/arm64 image and a podman volume ([local-app.md](local-app.md#what-the-user-does)) | Two consecutive weekly ClinVar-GKM releases picked up by a running container, unattended with auto-update on |
 | M5 | History | Release-interval tables, variant and SCV timelines, release-to-release diffs | "What changed in BRCA2 since last month" answered from the UI |
-| M6 | Trial features | Chosen from [features.md](features.md#trial-features) | Per feature |
+| M6 | Trial features | Chosen from [features.md](features.md#trial-features-phase-6-onward) | Per feature |
 
 M0 decides more than anything else, so it comes before any app code. **Status, 25 October 2026:** download, derivation to parquet, reference checks and validation are done ([schema.md](schema.md)), and query timings are measured ([storage eval](research/storage-format-eval.md)). Still open from M0: testing the build inside a 4 GiB podman machine.
 

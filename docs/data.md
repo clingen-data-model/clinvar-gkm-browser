@@ -100,7 +100,7 @@ We keep ClinVar Miner's conflict scale, which is finer than ClinVar's three-grou
 
 ## History
 
-History is the biggest gap a new tool can fill (see [features.md](features.md#trial-features)), and the source doesn't provide it yet.
+History is the biggest gap a new tool can fill (see [features.md](features.md#trial-features-phase-6-onward)), and the source doesn't provide it yet.
 
 **Model and build: see [history.md](history.md)** (revised 29 October 2026). Not snapshots: upstream's records kept as a log of each release's changes, and the derived tables with the releases each row held, updated from each weekly delta.
 
