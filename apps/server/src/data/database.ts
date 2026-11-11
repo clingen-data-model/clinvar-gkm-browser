@@ -207,6 +207,51 @@ export class Database {
       // so files of one being applied, or left by a failed apply, are of releases after the last.
       const last = releases.at(-1)?.release;
       if (last === undefined) throw new Error('the release history lists no releases');
+      // A table's rows as of a release are those added by then less those closed by then, since a
+      // row is closed at most once. Each release's rows are in their own files, and a file's footer
+      // holds its row count, so this reads no data; counting each release's views took 1.7 s a
+      // release on 4 threads. Reading every footer also fails on a file that isn't parquet, so a
+      // broken history still fails here, before anything is served.
+      const footers = z
+        .object({
+          kind: z.enum(['added', 'closed']),
+          name: z.string(),
+          release: z.iso.date(),
+          rows: z.coerce.number().int(),
+        })
+        .array()
+        .parse(
+          (
+            await connection.runAndReadAll(
+              `SELECT regexp_extract(file_name, '/(added|closed)/[^/]+/release=[^/]+/[^/]+$', 1) AS kind,
+                      regexp_extract(file_name, '/([^/]+)/release=[^/]+/[^/]+$', 1) AS name,
+                      regexp_extract(file_name, '/release=([0-9-]+)/[^/]+$', 1) AS release,
+                      num_rows AS rows
+               FROM parquet_file_metadata([${(['added', 'closed'] as const).map((kind) => sqlString(join(dir, kind, '*', '*', '*.parquet'))).join(', ')}])`,
+            )
+          ).getRowObjectsJson(),
+        );
+      const rowsAsOf = (name: string, date: string) =>
+        footers
+          .filter((f) => f.name === name && f.release <= date)
+          .reduce((n, f) => n + (f.kind === 'added' ? f.rows : -f.rows), 0);
+      const plainRows = z
+        .object({ name: z.string(), rows: z.coerce.number().int() })
+        .array()
+        .parse(
+          plain.length === 0
+            ? []
+            : (
+                await connection.runAndReadAll(
+                  plain
+                    .map(
+                      (name) =>
+                        `SELECT '${name}' AS name, count(*) AS rows FROM read_parquet(${sqlString(join(dir, 'plain', `${name}.parquet`))})`,
+                    )
+                    .join(' UNION ALL '),
+                )
+              ).getRowObjectsJson(),
+        );
 
       for (const r of releases) {
         const date = r.release;
@@ -234,18 +279,12 @@ export class Database {
                   dataset AS gkm_dataset, ${DERIVED_SCHEMA} AS derived_schema, applied_at AS loaded_at
            FROM read_parquet(${sqlString(join(dir, 'releases.parquet'))}) WHERE release = DATE '${date}'`,
         );
-        const counts = z
-          .object({ name: z.string(), rows: z.coerce.number().int() })
-          .array()
-          .parse(
-            (
-              await connection.runAndReadAll(
-                [...tables.map((t) => t.name), ...plain, 'release']
-                  .map((name) => `SELECT '${name}' AS name, count(*) AS rows FROM ${schema}.${name}`)
-                  .join(' UNION ALL ') + ' ORDER BY name',
-              )
-            ).getRowObjectsJson(),
-          );
+        // The release view holds this release's one row of releases.parquet.
+        const counts = [
+          ...tables.map(({ name }) => ({ name, rows: rowsAsOf(name, date) })),
+          ...plainRows,
+          { name: 'release', rows: 1 },
+        ].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
         built.set(date, {
           schema,
           onDisk: {

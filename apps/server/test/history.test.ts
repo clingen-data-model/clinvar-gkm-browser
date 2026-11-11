@@ -163,6 +163,23 @@ describe('a release history', () => {
     expect(scvRows[1]).toBe((scvRows[0] ?? 0) - 1);
   });
 
+  it("gives each table's rows as of each release, as counting them does", async () => {
+    // The counts come from the files' footers (added less closed), not from running the views.
+    const { body } = await get('/api/v1/releases', ReleaseList);
+    for (const release of body.data) {
+      expect(release.tables.map((t) => t.name).sort()).toEqual(
+        [...Object.keys(TABLES), ...PLAIN, 'release'].sort(),
+      );
+      for (const { name, rows } of release.tables) {
+        const [row] = await db.query(
+          release.clinvarRelease,
+          `SELECT count(*)::INTEGER AS n FROM ${name}`,
+        );
+        expect(rows, `${name} as of ${release.clinvarRelease}`).toBe(row?.['n']);
+      }
+    }
+  });
+
   it('reads a record as of each release', async () => {
     const before = await get(
       `/api/v1/scvs/${String(CHANGED)}?release=${FIXTURE_RELEASE}`,

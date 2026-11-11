@@ -121,6 +121,27 @@ run() {  # <name>
   "$SCRIPTS/history.sh" check >/dev/null && "$SCRIPTS/history.sh" check 2026-10-24 >/dev/null \
     || { echo "check failed after rebuilding from the log"; exit 1; }
   echo "  rebuilt from the log"
+  # The row-count rule, which the server's row counts rest on (a closing closes exactly one open
+  # row). Every release keeps it; a history that breaks it, here with 2026-10-31's SCV closings
+  # written twice, fails verify, and an apply over it stops before listing its release.
+  "$SCRIPTS/history.sh" verify >/dev/null || { echo "verify failed on a sound history"; exit 1; }
+  local closings="$der/closed/scv/release=2026-10-31"
+  [[ $(duckdb -noheader -list -c "SELECT count(*) FROM read_parquet('$closings/data.parquet')") -gt 0 ]] \
+    || { echo "2026-10-31 should close SCV rows"; exit 1; }
+  cp "$closings/data.parquet" "$closings/again.parquet"
+  ! out="$("$SCRIPTS/history.sh" verify 2>&1)" && grep -q "2026-10-31 breaks the row-count rule" <<<"$out" \
+    || { echo "$out"; echo "verify didn't refuse closings written twice"; exit 1; }
+  duckdb -c "COPY (FROM read_parquet('$der/releases.parquet') WHERE release < DATE '$last') TO '$der/releases.new' (FORMAT parquet)"
+  mv "$der/releases.new" "$der/releases.parquet"
+  ! out="$("$SCRIPTS/history.sh" apply "$tmp/synthetic-2" 2>&1)" && grep -q "$last breaks the row-count rule" <<<"$out" \
+    || { echo "$out"; echo "apply didn't stop at a release that breaks the row-count rule"; exit 1; }
+  [[ $(duckdb -noheader -list -c "SELECT max(release) FROM read_parquet('$der/releases.parquet')") < $last ]] \
+    || { echo "a failed apply listed $last"; exit 1; }
+  rm "$closings/again.parquet"
+  "$SCRIPTS/history.sh" apply "$tmp/synthetic-2" >/dev/null
+  "$SCRIPTS/history.sh" check >/dev/null || { echo "check failed after the row-count rule was restored"; exit 1; }
+  echo "  the row-count rule holds; closings written twice fail verify and stop an apply:"
+  grep -A1 "breaks the row-count rule" <<<"$out" | sed 's/^/    /' 
 }
 
 run history

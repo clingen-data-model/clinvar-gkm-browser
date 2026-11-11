@@ -71,6 +71,11 @@ if podman image exists "$data_image"; then
   echo "data image $data_image: already built"
 else
   echo "data image $data_image: building"
+  if $history; then
+    # The server reads each release's row counts from the files' footers, which holds only while
+    # every release keeps the row-count rule (scripts/history.sh); refuse to ship one that doesn't.
+    CLINVAR_DATA_DIR="$DATA_DIR" HISTORY_DIR="$DATA_DIR/history" "$(dirname "$0")/history.sh" verify
+  fi
   # --pull=always so the target platform's node is fetched, not the build machine's copy.
   podman build --platform "$PLATFORM" --pull=always --ignorefile deploy/data.dockerignore \
     -f deploy/data.Dockerfile --build-arg NODE_VERSION="$NODE_VERSION" --build-arg SOURCE="$source" --build-arg RELEASE="$release" \

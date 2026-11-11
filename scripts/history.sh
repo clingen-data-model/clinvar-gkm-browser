@@ -9,6 +9,7 @@
 #   rebuild                rebuild the derived history from the log, e.g. after a schema change
 #   check [release]        derive the full state as of a release (default the latest) from the log, and
 #                          compare it with the derived history's rows as of that release
+#   verify                 check the row-count rule (below) for every release in the derived history
 #
 # Both stores have one layout. Files are written once and never changed; a release's files count only
 # once the release is listed in releases.parquet, which is written last (so a failed apply leaves
@@ -20,6 +21,11 @@
 #   <store>/releases.parquet                             the releases in the store, in order
 #
 # A row holds from its release (valid_from) until the release that closes it (valid_to), if any.
+#
+# The row-count rule: in the derived history, a closing closes exactly one row that holds just before
+# its release. Then a table's rows as of a release are the rows added by then less the rows closed by
+# then, which the server reads from the files' footers instead of counting (docs/history.md#in-the-app).
+# A derived release is checked against the rule before it's listed.
 #
 # The log (HISTORY_DIR/log) holds upstream's records as published, (key, rec JSON) per bundle
 # section, with the pointers the tracing follows. It doesn't depend on this app's schema. The derived
@@ -123,13 +129,16 @@ clear_unlisted() {  # <store>
 }
 
 # Move a staging store's files in, then list the release: the release counts from that write on.
-commit() {  # <staging store> <store> <releases row SQL>
+# A derived release is checked against the row-count rule in between: with its files in place but
+# unlisted, so if the check fails the release never counts and the next run clears its files.
+commit() {  # <staging store> <store> <releases row SQL> [derived release to check]
   local d
   for d in "$1"/added/*/release=* "$1"/closed/*/release=*; do
     local rel="${d#"$1"/}"
     mkdir -p "$2/$(dirname "$rel")"
     mv "$d" "$2/$rel"
   done
+  [[ -z ${4:-} ]] || verify_counts "$4"
   local list="$2/releases.parquet"
   if [[ -f $list ]]; then
     duckdb -c "COPY (FROM read_parquet('$list') UNION ALL $3 ORDER BY release) TO '$list.new' (FORMAT parquet)"
@@ -215,6 +224,29 @@ check_keys() {  # <derived dir>
   done
 }
 
+# The row-count rule, for one release: each table's rows as of it, counted, against the rows its
+# files' footers give (added by then less closed by then). Dies naming the tables that differ.
+verify_counts() {  # <release>
+  local release=$1 t actual="" bad
+  for t in $VARIANT_TABLES $LOOKUP_TABLES; do
+    actual+="${actual:+ UNION ALL }SELECT '$t' AS tbl, (SELECT count(*) FROM ($(der_as_of "$t" "$release"))) AS n"
+  done
+  bad=$(sql "$DUCKDB_SETTINGS
+    WITH footers AS (
+      SELECT regexp_extract(file_name, '/(added|closed)/[^/]+/release=[^/]+/[^/]+\$', 1) AS kind,
+             regexp_extract(file_name, '/([^/]+)/release=[^/]+/[^/]+\$', 1) AS tbl,
+             regexp_extract(file_name, '/release=([0-9-]+)/[^/]+\$', 1)::DATE AS release, num_rows
+      FROM parquet_file_metadata(['$DER/added/*/*/*.parquet', '$DER/closed/*/*/*.parquet'])),
+    expected AS (
+      SELECT tbl, sum(CASE kind WHEN 'added' THEN num_rows ELSE -num_rows END) AS n
+      FROM footers WHERE release <= DATE '$release' GROUP BY tbl),
+    actual AS ($actual)
+    SELECT a.tbl || ': ' || a.n || ' rows, ' || coalesce(e.n, 0) || ' by the footers'
+    FROM actual a LEFT JOIN expected e USING (tbl) WHERE a.n <> coalesce(e.n, 0) ORDER BY a.tbl")
+  [[ -z $bad ]] || die "the derived history as of $release breaks the row-count rule (a closing closes exactly one open row):
+$bad"
+}
+
 # ---- the log ------------------------------------------------------------------------------------
 
 log_init() {  # <state>
@@ -285,7 +317,7 @@ der_init() {  # <release>
   } | duckdb >/dev/null
   mkdir -p "$DER/plain"
   for t in $PLAIN_TABLES; do cp "$work/new/$t.parquet" "$DER/plain/$t.parquet"; done
-  commit "$work/stage" "$DER" "SELECT * FROM read_parquet('$LOG/releases.parquet') WHERE release = DATE '$release'"
+  commit "$work/stage" "$DER" "SELECT * FROM read_parquet('$LOG/releases.parquet') WHERE release = DATE '$release'" "$release"
   rm -rf "$work"
 }
 
@@ -402,7 +434,7 @@ SQL
     echo ".mode box"
     echo "SELECT * FROM changes WHERE closed + added > 0;"
   } | duckdb "$db"
-  commit "$work/stage" "$DER" "SELECT * FROM read_parquet('$LOG/releases.parquet') WHERE release = DATE '$release'"
+  commit "$work/stage" "$DER" "SELECT * FROM read_parquet('$LOG/releases.parquet') WHERE release = DATE '$release'" "$release"
   rm -rf "$work"
   echo "  $((SECONDS - t0))s  done"
 }
@@ -487,10 +519,20 @@ cmd_check() {
   return $status
 }
 
+cmd_verify() {
+  [[ -f "$DER/releases.parquet" ]] || die "no derived history at $DER"
+  local r t0=$SECONDS
+  for r in $(sql "SELECT release FROM read_parquet('$DER/releases.parquet') ORDER BY 1"); do
+    verify_counts "$r"
+  done
+  echo "every release keeps the row-count rule ($((SECONDS - t0)) s)"
+}
+
 case ${1:-} in
   init) cmd_init "$2" ;;
   apply) cmd_apply "$2" ;;
   rebuild) cmd_rebuild ;;
   check) cmd_check "${2:-}" ;;
-  *) die "usage: $0 init <state> | apply <delta state> | rebuild | check [release]" ;;
+  verify) cmd_verify ;;
+  *) die "usage: $0 init <state> | apply <delta state> | rebuild | check [release] | verify" ;;
 esac
